@@ -34,6 +34,13 @@ import kotlinx.coroutines.withContext
 import java.io.InputStream
 import java.io.OutputStream
 
+// Lightweight data class to cache file details instantly and prevent storage lag
+data class StatusFile(
+    val uri: Uri,
+    val name: String,
+    val lastModified: Long
+)
+
 class MainActivity : AppCompatActivity() {
 
     private lateinit var gridLayout: GridLayout
@@ -43,7 +50,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var btnTimeFilter: Button
     private lateinit var btnGrant: Button
     private lateinit var swipeRefreshLayout: SwipeRefreshLayout
-    private var allFiles: List<DocumentFile> = listOf()
+    
+    private var allFiles: List<StatusFile> = listOf()
     private var currentTab = "images"
     private var sortCriteria = "time_desc"
     private var selectedHourFilter = 0 
@@ -68,7 +76,6 @@ class MainActivity : AppCompatActivity() {
         }
         rootLayout.addView(header)
 
-        // Toolbar: Folder (hidden if set), Sort, Time Filter, Settings Gear Icon
         val toolbar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             setPadding(16, 16, 16, 8)
@@ -107,7 +114,6 @@ class MainActivity : AppCompatActivity() {
         toolbar.addView(btnSettingsIcon, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { setMargins(2,0,2,0) })
         rootLayout.addView(toolbar)
 
-        // Tabs Bar (Images, Videos, Saved)
         val tabsLayout = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             setBackgroundColor(0xFF128C7E.toInt())
@@ -122,7 +128,6 @@ class MainActivity : AppCompatActivity() {
         tabsLayout.addView(tabSaved)
         rootLayout.addView(tabsLayout)
 
-        // SwipeRefreshLayout wrapping ScrollView for pull-to-refresh
         swipeRefreshLayout = SwipeRefreshLayout(this).apply {
             setOnRefreshListener { refreshStatuses() }
         }
@@ -139,18 +144,15 @@ class MainActivity : AppCompatActivity() {
         swipeRefreshLayout.addView(scroll)
         rootLayout.addView(swipeRefreshLayout, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.MATCH_PARENT))
 
-        // Swipe gesture detector for tab switching
         gestureDetector = GestureDetector(this, object : GestureDetector.SimpleOnGestureListener() {
             override fun onFling(e1: MotionEvent?, e2: MotionEvent, velocityX: Float, velocityY: Float): Boolean {
                 if (e1 != null && e2 != null) {
                     val diffX = e2.x - e1.x
                     if (Math.abs(diffX) > 120 && Math.abs(velocityX) > 100) {
                         if (diffX > 0) {
-                            // Swiped Right -> Previous Tab
                             if (currentTab == "videos") switchTab("images")
                             else if (currentTab == "saved") switchTab("videos")
                         } else {
-                            // Swiped Left -> Next Tab
                             if (currentTab == "images") switchTab("videos")
                             else if (currentTab == "videos") switchTab("saved")
                         }
@@ -187,7 +189,7 @@ class MainActivity : AppCompatActivity() {
         for (permission in persistedUriPermissions) {
             if (permission.isReadPermission) {
                 savedUri = permission.uri
-                btnGrant.visibility = View.GONE // Hide folder button if already set
+                btnGrant.visibility = View.GONE
                 loadStatuses(savedUri!!)
                 break
             }
@@ -210,7 +212,7 @@ class MainActivity : AppCompatActivity() {
             if (uri != null) {
                 contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 savedUri = uri
-                btnGrant.visibility = View.GONE // Hide folder button once set
+                btnGrant.visibility = View.GONE
                 loadStatuses(uri)
                 Toast.makeText(this, "Folder Saved & Loaded!", Toast.LENGTH_SHORT).show()
             }
@@ -218,7 +220,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun refreshStatuses() {
-        if (currentTab == "saved" || currentTab == "settings") {
+        if (currentTab == "saved") {
             renderGrid()
             swipeRefreshLayout.isRefreshing = false
             Toast.makeText(this, "Refreshed!", Toast.LENGTH_SHORT).show()
@@ -233,9 +235,18 @@ class MainActivity : AppCompatActivity() {
     private fun loadStatuses(uri: Uri) {
         CoroutineScope(Dispatchers.IO).launch {
             val docFile = DocumentFile.fromTreeUri(this@MainActivity, uri)
+            val cachedList = mutableListOf<StatusFile>()
+            
             if (docFile != null && docFile.exists()) {
-                allFiles = docFile.listFiles().filter { it.name != ".nomedia" }
-                
+                for (file in docFile.listFiles()) {
+                    val name = file.name ?: ""
+                    if (name != ".nomedia") {
+                        // Cache attributes once in background to eliminate stutter/lag
+                        cachedList.add(StatusFile(file.uri, name, file.lastModified()))
+                    }
+                }
+                allFiles = cachedList
+
                 val prefs = getSharedPreferences("StatusSaverPrefs", Context.MODE_PRIVATE)
                 if (prefs.getBoolean("auto_save_enabled", false)) {
                     autoSaveNewStatuses()
@@ -249,10 +260,10 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun autoSaveNewStatuses() {
-        for (file in allFiles) {
+        for (fileObj in allFiles) {
             try {
-                val inputStream = contentResolver.openInputStream(file.uri) ?: continue
-                val name = file.name ?: "autosave_${System.currentTimeMillis()}"
+                val inputStream = contentResolver.openInputStream(fileObj.uri) ?: continue
+                val name = fileObj.name
                 val mimeType = if (name.endsWith(".mp4")) "video/mp4" else "image/jpeg"
                 val folderDir = if (name.endsWith(".mp4")) Environment.DIRECTORY_MOVIES else Environment.DIRECTORY_PICTURES
 
@@ -343,8 +354,8 @@ class MainActivity : AppCompatActivity() {
         }
 
         val currentTime = System.currentTimeMillis()
-        val filtered = allFiles.filter { file ->
-            val name = file.name?.lowercase() ?: ""
+        val filtered = allFiles.filter { fileObj ->
+            val name = fileObj.name.lowercase()
             val matchesTab = when (currentTab) {
                 "images" -> name.endsWith(".jpg") || name.endsWith(".jpeg") || name.endsWith(".png")
                 "videos" -> name.endsWith(".mp4") || name.endsWith(".mkv") || name.endsWith(".avi")
@@ -353,7 +364,7 @@ class MainActivity : AppCompatActivity() {
 
             if (!matchesTab) return@filter false
 
-            val fileTime = file.lastModified()
+            val fileTime = fileObj.lastModified
             when (selectedHourFilter) {
                 in 1..5 -> (currentTime - fileTime) <= (selectedHourFilter * 60 * 60 * 1000L)
                 6 -> (currentTime - fileTime) <= (24 * 60 * 60 * 1000L)
@@ -361,10 +372,10 @@ class MainActivity : AppCompatActivity() {
             }
         }.sortedWith(Comparator { f1, f2 ->
             when (sortCriteria) {
-                "time_desc" -> f2.lastModified().compareTo(f1.lastModified())
-                "time_asc" -> f1.lastModified().compareTo(f2.lastModified())
-                "name_asc" -> (f1.name ?: "").compareTo(f2.name ?: "")
-                "name_desc" -> (f2.name ?: "").compareTo(f1.name ?: "")
+                "time_desc" -> f2.lastModified.compareTo(f1.lastModified)
+                "time_asc" -> f1.lastModified.compareTo(f2.lastModified)
+                "name_asc" -> f1.name.compareTo(f2.name)
+                "name_desc" -> f2.name.compareTo(f1.name)
                 else -> 0
             }
         })
@@ -382,7 +393,7 @@ class MainActivity : AppCompatActivity() {
         val screenWidth = resources.displayMetrics.widthPixels
         val cardWidth = (screenWidth / 2) - 24
 
-        for (file in filtered) {
+        for (fileObj in filtered) {
             val card = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
                 setBackgroundColor(0xFFFFFFFF.toInt())
@@ -401,14 +412,13 @@ class MainActivity : AppCompatActivity() {
             }
 
             if (currentTab == "images") {
-                Glide.with(this).load(file.uri).into(previewView)
-                previewView.setOnClickListener { showImagePreview(file.uri) }
+                Glide.with(this).load(fileObj.uri).into(previewView)
+                previewView.setOnClickListener { showImagePreview(fileObj.uri) }
             } else {
-                Glide.with(this).asBitmap().load(file.uri).into(previewView)
-                previewView.setOnClickListener { showVideoPreview(file.uri) }
+                Glide.with(this).asBitmap().load(fileObj.uri).into(previewView)
+                previewView.setOnClickListener { showVideoPreview(fileObj.uri) }
             }
 
-            // Compact icon buttons for space saving
             val btnLayout = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 setPadding(0, 4, 0, 0)
@@ -421,7 +431,7 @@ class MainActivity : AppCompatActivity() {
                 setBackgroundColor(0xFF128C7E.toInt())
                 setTextColor(0xFFFFFFFF.toInt())
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(2,0,2,0) }
-                setOnClickListener { saveToGallery(file) }
+                setOnClickListener { saveToGallery(fileObj) }
             }
 
             val shareBtn = Button(this).apply {
@@ -430,7 +440,7 @@ class MainActivity : AppCompatActivity() {
                 setBackgroundColor(0xFF25D366.toInt())
                 setTextColor(0xFFFFFFFF.toInt())
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(2,0,2,0) }
-                setOnClickListener { shareFile(file.uri) }
+                setOnClickListener { shareFile(fileObj.uri) }
             }
 
             btnLayout.addView(saveBtn)
@@ -541,10 +551,10 @@ class MainActivity : AppCompatActivity() {
         startActivity(Intent.createChooser(intent, "Share Status via"))
     }
 
-    private fun saveToGallery(file: DocumentFile) {
+    private fun saveToGallery(fileObj: StatusFile) {
         try {
-            val inputStream = contentResolver.openInputStream(file.uri) ?: return
-            val name = file.name ?: "media_${System.currentTimeMillis()}"
+            val inputStream = contentResolver.openInputStream(fileObj.uri) ?: return
+            val name = fileObj.name
             val mimeType = if (currentTab == "images") "image/jpeg" else "video/mp4"
             val folderDir = if (currentTab == "images") Environment.DIRECTORY_PICTURES else Environment.DIRECTORY_MOVIES
 
