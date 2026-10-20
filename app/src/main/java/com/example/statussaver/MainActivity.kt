@@ -5,6 +5,7 @@ import android.app.AlertDialog
 import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
+import android.media.AudioManager
 import android.net.Uri
 import android.os.Bundle
 import android.os.Environment
@@ -15,6 +16,7 @@ import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
 import android.widget.Button
+import android.widget.FrameLayout
 import android.widget.GridLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
@@ -65,7 +67,6 @@ class MainActivity : AppCompatActivity() {
             setBackgroundColor(0xFFF0F2F5.toInt())
         }
 
-        // Updated Header Title as requested
         val header = TextView(this).apply {
             text = "Save Status By Kiran"
             textSize = 20f
@@ -184,6 +185,22 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun updateTabBadges() {
+        val currentTime = System.currentTimeMillis()
+        // Count statuses within the last 24 hours as "New"
+        val newImagesCount = allFiles.count { file ->
+            val name = file.name.lowercase()
+            (name.endsWith(".jpg") || name.endsWith(".jpeg") || name.endsWith(".png")) && (currentTime - file.lastModified <= 86400000L)
+        }
+        val newVideosCount = allFiles.count { file ->
+            val name = file.name.lowercase()
+            (name.endsWith(".mp4") || name.endsWith(".mkv") || name.endsWith(".avi")) && (currentTime - file.lastModified <= 86400000L)
+        }
+
+        tabImages.text = if (newImagesCount > 0) "IMAGES ($newImagesCount)" else "IMAGES"
+        tabVideos.text = if (newVideosCount > 0) "VIDEOS ($newVideosCount)" else "VIDEOS"
+    }
+
     private fun checkPersistedPermission() {
         val persistedUriPermissions = contentResolver.persistedUriPermissions
         for (permission in persistedUriPermissions) {
@@ -252,6 +269,7 @@ class MainActivity : AppCompatActivity() {
                 }
             }
             withContext(Dispatchers.Main) {
+                updateTabBadges()
                 renderGrid()
                 swipeRefreshLayout.isRefreshing = false
             }
@@ -392,62 +410,64 @@ class MainActivity : AppCompatActivity() {
         val screenWidth = resources.displayMetrics.widthPixels
         val cardWidth = (screenWidth / 2) - 24
 
-        for (fileObj in filtered) {
-            val card = LinearLayout(this).apply {
-                orientation = LinearLayout.VERTICAL
-                setBackgroundColor(0xFFFFFFFF.toInt())
-                setPadding(8, 8, 8, 8)
+        for (i in filtered.indices) {
+            val fileObj = filtered[i]
+
+            val frameLayout = FrameLayout(this).apply {
                 layoutParams = GridLayout.LayoutParams().apply {
                     width = cardWidth
                     height = (cardWidth * 1.45).toInt()
                     setMargins(8, 8, 8, 8)
                 }
+                setBackgroundColor(0xFFE0E0E0.toInt())
             }
 
             val previewView = ImageView(this).apply {
-                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f)
+                layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
                 scaleType = ImageView.ScaleType.CENTER_CROP
-                setBackgroundColor(0xFFE0E0E0.toInt())
             }
 
             if (currentTab == "images") {
                 Glide.with(this).load(fileObj.uri).into(previewView)
-                previewView.setOnClickListener { showImagePreview(fileObj.uri) }
+                previewView.setOnClickListener { openFullScreenGallery(filtered, i) }
             } else {
                 Glide.with(this).asBitmap().load(fileObj.uri).into(previewView)
-                previewView.setOnClickListener { showVideoPreview(fileObj.uri) }
+                previewView.setOnClickListener { openFullScreenGallery(filtered, i) }
             }
 
-            val btnLayout = LinearLayout(this).apply {
+            val iconLayout = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
-                setPadding(0, 4, 0, 0)
                 gravity = Gravity.CENTER
+                setPadding(8, 8, 8, 8)
+                layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT).apply {
+                    gravity = Gravity.BOTTOM or Gravity.END
+                }
             }
 
-            val saveBtn = Button(this).apply {
-                text = "⬇"
-                textSize = 14f
-                setBackgroundColor(0xFF128C7E.toInt())
+            val saveIcon = TextView(this).apply {
+                text = " ⬇ "
+                textSize = 18f
                 setTextColor(0xFFFFFFFF.toInt())
-                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(2,0,2,0) }
+                setBackgroundColor(0x66000000.toInt())
+                setPadding(12, 6, 12, 6)
                 setOnClickListener { saveToGallery(fileObj) }
             }
 
-            val shareBtn = Button(this).apply {
-                text = "📤"
-                textSize = 14f
-                setBackgroundColor(0xFF25D366.toInt())
+            val shareIcon = TextView(this).apply {
+                text = " 📤 "
+                textSize = 18f
                 setTextColor(0xFFFFFFFF.toInt())
-                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(2,0,2,0) }
+                setBackgroundColor(0x66000000.toInt())
+                setPadding(12, 6, 12, 6)
                 setOnClickListener { shareFile(fileObj.uri) }
             }
 
-            btnLayout.addView(saveBtn)
-            btnLayout.addView(shareBtn)
+            iconLayout.addView(saveIcon)
+            iconLayout.addView(shareIcon)
 
-            card.addView(previewView)
-            card.addView(btnLayout)
-            gridLayout.addView(card)
+            frameLayout.addView(previewView)
+            frameLayout.addView(iconLayout)
+            gridLayout.addView(frameLayout)
         }
     }
 
@@ -496,7 +516,10 @@ class MainActivity : AppCompatActivity() {
             }
 
             Glide.with(this).load(uri).into(previewView)
-            previewView.setOnClickListener { showImagePreview(uri) }
+            previewView.setOnClickListener { 
+                val fakeList = listOf(StatusFile(uri, "saved", 0L))
+                openFullScreenGallery(fakeList, 0)
+            }
 
             val statusBtn = Button(this).apply {
                 text = "Saved ✓"
@@ -512,40 +535,167 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun showImagePreview(uri: Uri) {
-        val container = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(24, 24, 24, 24)
-            gravity = Gravity.CENTER
+    // Full screen viewer with swipe navigation, transparent download/share actions, and video mute toggle
+    private fun openFullScreenGallery(items: List<StatusFile>, initialIndex: Int) {
+        var currentIndex = initialIndex
+        var isMuted = false
+
+        val dialogContainer = FrameLayout(this).apply {
+            setBackgroundColor(0xFF000000.toInt())
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.MATCH_PARENT)
         }
+
         val imageView = ImageView(this).apply {
-            adjustViewBounds = true
-            maxHeight = 1600
+            layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
+            scaleType = ImageView.ScaleType.FIT_CENTER
         }
-        Glide.with(this).load(uri).into(imageView)
-        container.addView(imageView)
 
-        AlertDialog.Builder(this)
-            .setView(container)
-            .setPositiveButton("Close") { dialog, _ -> dialog.dismiss() }
-            .show()
-    }
-
-    private fun showVideoPreview(uri: Uri) {
         val videoView = android.widget.VideoView(this).apply {
-            setVideoURI(uri)
-            setMediaController(android.widget.MediaController(this@MainActivity))
-            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 800)
+            layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT, Gravity.CENTER)
+            visibility = View.GONE
         }
-        val dialog = AlertDialog.Builder(this)
-            .setView(videoView)
-            .setPositiveButton("Close") { d, _ -> 
-                videoView.stopPlayback()
-                d.dismiss() 
+
+        dialogContainer.addView(imageView)
+        dialogContainer.addView(videoView)
+
+        val overlayBar = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            setBackgroundColor(0x55000000.toInt())
+            setPadding(16, 24, 16, 24)
+            layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT).apply {
+                gravity = Gravity.BOTTOM
             }
+        }
+
+        val btnPrev = Button(this).apply {
+            text = " ◀ "
+            textSize = 14f
+            setBackgroundColor(0x66FFFFFF.toInt())
+            setTextColor(0xFFFFFFFF.toInt())
+        }
+
+        val btnMute = Button(this).apply {
+            text = " 🔊 "
+            textSize = 14f
+            setBackgroundColor(0x66444444.toInt())
+            setTextColor(0xFFFFFFFF.toInt())
+        }
+
+        val btnDownload = Button(this).apply {
+            text = " ⬇ "
+            textSize = 14f
+            setBackgroundColor(0x66128C7E.toInt())
+            setTextColor(0xFFFFFFFF.toInt())
+        }
+
+        val btnShare = Button(this).apply {
+            text = " 📤 "
+            textSize = 14f
+            setBackgroundColor(0x6625D366.toInt())
+            setTextColor(0xFFFFFFFF.toInt())
+        }
+
+        val btnNext = Button(this).apply {
+            text = " ▶ "
+            textSize = 14f
+            setBackgroundColor(0x66FFFFFF.toInt())
+            setTextColor(0xFFFFFFFF.toInt())
+        }
+
+        overlayBar.addView(btnPrev)
+        overlayBar.addView(btnMute)
+        overlayBar.addView(btnDownload)
+        overlayBar.addView(btnShare)
+        overlayBar.addView(btnNext)
+        dialogContainer.addView(overlayBar)
+
+        val dialog = AlertDialog.Builder(this, android.R.style.Theme_Black_NoTitleBar_Fullscreen)
+            .setView(dialogContainer)
             .create()
+
+        fun updateMediaView() {
+            val currentFile = items[currentIndex]
+            val nameLower = currentFile.name.lowercase()
+            
+            if (nameLower.endsWith(".mp4") || nameLower.endsWith(".mkv") || nameLower.endsWith(".avi")) {
+                imageView.visibility = View.GONE
+                videoView.visibility = View.VISIBLE
+                btnMute.visibility = View.VISIBLE
+                videoView.setVideoURI(currentFile.uri)
+                videoView.setOnPreparedListener { mp ->
+                    mp.setVolume(if (isMuted) 0f else 1f, if (isMuted) 0f else 1f)
+                    mp.start()
+                }
+                videoView.setOnCompletionListener { mp ->
+                    mp.start() // Loop video status automatically
+                }
+            } else {
+                videoView.visibility = View.GONE
+                btnMute.visibility = View.GONE
+                videoView.stopPlayback()
+                imageView.visibility = View.VISIBLE
+                Glide.with(this).load(currentFile.uri).into(imageView)
+            }
+        }
+
+        btnMute.setOnClickListener {
+            isMuted = !isMuted
+            btnMute.text = if (isMuted) " 🔇 " else " 🔊 "
+            updateMediaView()
+        }
+
+        btnPrev.setOnClickListener {
+            if (currentIndex > 0) {
+                currentIndex--
+                updateMediaView()
+            } else {
+                Toast.makeText(this, "First status", Toast.LENGTH_SHORT).show()
+            }
+        }
+
+        btnNext.setOnClickListener {
+            if (currentIndex < items.size - 1) {
+                currentIndex++
+                updateMediaView()
+            } else {
+                Toast.makeText(this, "Last status", Toast.LENGTH_SHORT).show()
+            }
+        }
+
+        val fullScreenGesture = GestureDetector(this, object : GestureDetector.SimpleOnGestureListener() {
+            override fun onFling(e1: MotionEvent?, e2: MotionEvent, velocityX: Float, velocityY: Float): Boolean {
+                if (e1 != null && e2 != null) {
+                    val diffX = e2.x - e1.x
+                    if (Math.abs(diffX) > 100 && Math.abs(velocityX) > 100) {
+                        if (diffX > 0 && currentIndex > 0) {
+                            currentIndex--
+                            updateMediaView()
+                        } else if (diffX < 0 && currentIndex < items.size - 1) {
+                            currentIndex++
+                            updateMediaView()
+                        }
+                        return true
+                    }
+                }
+                return false
+            }
+        })
+
+        dialogContainer.setOnTouchListener { _, event ->
+            fullScreenGesture.onTouchEvent(event)
+            true
+        }
+
+        btnDownload.setOnClickListener { saveToGallery(items[currentIndex]) }
+        btnShare.setOnClickListener { shareFile(items[currentIndex].uri) }
+
+        dialog.setOnDismissListener {
+            videoView.stopPlayback()
+        }
+
         dialog.show()
-        videoView.start()
+        updateMediaView()
     }
 
     private fun shareFile(uri: Uri) {
@@ -561,8 +711,8 @@ class MainActivity : AppCompatActivity() {
         try {
             val inputStream = contentResolver.openInputStream(fileObj.uri) ?: return
             val name = fileObj.name
-            val mimeType = if (currentTab == "images") "image/jpeg" else "video/mp4"
-            val folderDir = if (currentTab == "images") Environment.DIRECTORY_PICTURES else Environment.DIRECTORY_MOVIES
+            val mimeType = if (name.endsWith(".mp4")) "video/mp4" else "image/jpeg"
+            val folderDir = if (name.endsWith(".mp4")) Environment.DIRECTORY_MOVIES else Environment.DIRECTORY_PICTURES
 
             val values = ContentValues().apply {
                 put(MediaStore.MediaColumns.DISPLAY_NAME, name)
@@ -570,7 +720,7 @@ class MainActivity : AppCompatActivity() {
                 put(MediaStore.MediaColumns.RELATIVE_PATH, folderDir)
             }
 
-            val collection = if (currentTab == "images") MediaStore.Images.Media.EXTERNAL_CONTENT_URI else MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+            val collection = if (name.endsWith(".mp4")) MediaStore.Video.Media.EXTERNAL_CONTENT_URI else MediaStore.Images.Media.EXTERNAL_CONTENT_URI
             val targetUri = contentResolver.insert(collection, values)
             
             if (targetUri != null) {
