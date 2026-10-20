@@ -5,7 +5,6 @@ import android.app.AlertDialog
 import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
-import android.media.AudioManager
 import android.net.Uri
 import android.os.Bundle
 import android.os.Environment
@@ -187,7 +186,6 @@ class MainActivity : AppCompatActivity() {
 
     private fun updateTabBadges() {
         val currentTime = System.currentTimeMillis()
-        // Count statuses within the last 24 hours as "New"
         val newImagesCount = allFiles.count { file ->
             val name = file.name.lowercase()
             (name.endsWith(".jpg") || name.endsWith(".jpeg") || name.endsWith(".png")) && (currentTime - file.lastModified <= 86400000L)
@@ -390,7 +388,7 @@ class MainActivity : AppCompatActivity() {
         }.sortedWith(Comparator { f1, f2 ->
             when (sortCriteria) {
                 "time_desc" -> f2.lastModified.compareTo(f1.lastModified)
-                "time_asc" -> f1.lastModified.compareTo(f2.lastModified)
+                "time_asc" -> f1.lastModified.compareTo(f1.lastModified)
                 "name_asc" -> f1.name.compareTo(f2.name)
                 "name_desc" -> f2.name.compareTo(f1.name)
                 else -> 0
@@ -435,38 +433,37 @@ class MainActivity : AppCompatActivity() {
                 previewView.setOnClickListener { openFullScreenGallery(filtered, i) }
             }
 
-            val iconLayout = LinearLayout(this).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER
-                setPadding(8, 8, 8, 8)
-                layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT).apply {
-                    gravity = Gravity.BOTTOM or Gravity.END
-                }
-            }
-
+            // Download icon on bottom-left corner
             val saveIcon = TextView(this).apply {
                 text = " ⬇ "
                 textSize = 18f
                 setTextColor(0xFFFFFFFF.toInt())
                 setBackgroundColor(0x66000000.toInt())
                 setPadding(12, 6, 12, 6)
+                layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT).apply {
+                    gravity = Gravity.BOTTOM or Gravity.START
+                    setMargins(8, 8, 8, 8)
+                }
                 setOnClickListener { saveToGallery(fileObj) }
             }
 
+            // Share icon on bottom-right corner
             val shareIcon = TextView(this).apply {
                 text = " 📤 "
                 textSize = 18f
                 setTextColor(0xFFFFFFFF.toInt())
                 setBackgroundColor(0x66000000.toInt())
                 setPadding(12, 6, 12, 6)
+                layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT).apply {
+                    gravity = Gravity.BOTTOM or Gravity.END
+                    setMargins(8, 8, 8, 8)
+                }
                 setOnClickListener { shareFile(fileObj.uri) }
             }
 
-            iconLayout.addView(saveIcon)
-            iconLayout.addView(shareIcon)
-
             frameLayout.addView(previewView)
-            frameLayout.addView(iconLayout)
+            frameLayout.addView(saveIcon)
+            frameLayout.addView(shareIcon)
             gridLayout.addView(frameLayout)
         }
     }
@@ -515,9 +512,10 @@ class MainActivity : AppCompatActivity() {
                 setBackgroundColor(0xFFE0E0E0.toInt())
             }
 
+            val fakeFileObj = StatusFile(uri, "saved_image.jpg", 0L)
             Glide.with(this).load(uri).into(previewView)
             previewView.setOnClickListener { 
-                val fakeList = listOf(StatusFile(uri, "saved", 0L))
+                val fakeList = listOf(fakeFileObj)
                 openFullScreenGallery(fakeList, 0)
             }
 
@@ -535,14 +533,20 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // Full screen viewer with swipe navigation, transparent download/share actions, and video mute toggle
+    // Fully corrected full-screen viewer with proper layout weights so images expand nicely
     private fun openFullScreenGallery(items: List<StatusFile>, initialIndex: Int) {
         var currentIndex = initialIndex
         var isMuted = false
 
-        val dialogContainer = FrameLayout(this).apply {
+        val rootContainer = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
             setBackgroundColor(0xFF000000.toInt())
             layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.MATCH_PARENT)
+        }
+
+        // Media Frame taking up all available screen space with weight 1f
+        val mediaContainer = FrameLayout(this).apply {
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f)
         }
 
         val imageView = ImageView(this).apply {
@@ -555,17 +559,17 @@ class MainActivity : AppCompatActivity() {
             visibility = View.GONE
         }
 
-        dialogContainer.addView(imageView)
-        dialogContainer.addView(videoView)
+        mediaContainer.addView(imageView)
+        mediaContainer.addView(videoView)
+        rootContainer.addView(mediaContainer)
 
+        // Transparent Action Bar at the bottom
         val overlayBar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
-            setBackgroundColor(0x55000000.toInt())
+            setBackgroundColor(0x99000000.toInt())
             setPadding(16, 24, 16, 24)
-            layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT).apply {
-                gravity = Gravity.BOTTOM
-            }
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
         }
 
         val btnPrev = Button(this).apply {
@@ -608,10 +612,10 @@ class MainActivity : AppCompatActivity() {
         overlayBar.addView(btnDownload)
         overlayBar.addView(btnShare)
         overlayBar.addView(btnNext)
-        dialogContainer.addView(overlayBar)
+        rootContainer.addView(overlayBar)
 
         val dialog = AlertDialog.Builder(this, android.R.style.Theme_Black_NoTitleBar_Fullscreen)
-            .setView(dialogContainer)
+            .setView(rootContainer)
             .create()
 
         fun updateMediaView() {
@@ -628,7 +632,7 @@ class MainActivity : AppCompatActivity() {
                     mp.start()
                 }
                 videoView.setOnCompletionListener { mp ->
-                    mp.start() // Loop video status automatically
+                    mp.start()
                 }
             } else {
                 videoView.visibility = View.GONE
@@ -682,7 +686,7 @@ class MainActivity : AppCompatActivity() {
             }
         })
 
-        dialogContainer.setOnTouchListener { _, event ->
+        rootContainer.setOnTouchListener { _, event ->
             fullScreenGesture.onTouchEvent(event)
             true
         }
