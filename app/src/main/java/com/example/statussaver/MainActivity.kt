@@ -34,7 +34,6 @@ import kotlinx.coroutines.withContext
 import java.io.InputStream
 import java.io.OutputStream
 
-// Lightweight data class to cache file details instantly and prevent storage lag
 data class StatusFile(
     val uri: Uri,
     val name: String,
@@ -66,8 +65,9 @@ class MainActivity : AppCompatActivity() {
             setBackgroundColor(0xFFF0F2F5.toInt())
         }
 
+        // Updated Header Title as requested
         val header = TextView(this).apply {
-            text = "Status Saver Pro"
+            text = "Save Status By Kiran"
             textSize = 20f
             setTextColor(0xFFFFFFFF.toInt())
             setBackgroundColor(0xFF128C7E.toInt())
@@ -241,7 +241,6 @@ class MainActivity : AppCompatActivity() {
                 for (file in docFile.listFiles()) {
                     val name = file.name ?: ""
                     if (name != ".nomedia") {
-                        // Cache attributes once in background to eliminate stutter/lag
                         cachedList.add(StatusFile(file.uri, name, file.lastModified()))
                     }
                 }
@@ -514,13 +513,20 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showImagePreview(uri: Uri) {
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(24, 24, 24, 24)
+            gravity = Gravity.CENTER
+        }
         val imageView = ImageView(this).apply {
             adjustViewBounds = true
-            maxHeight = 1500
+            maxHeight = 1600
         }
         Glide.with(this).load(uri).into(imageView)
+        container.addView(imageView)
+
         AlertDialog.Builder(this)
-            .setView(imageView)
+            .setView(container)
             .setPositiveButton("Close") { dialog, _ -> dialog.dismiss() }
             .show()
     }
