@@ -12,6 +12,7 @@ import android.os.Environment
 import android.os.storage.StorageManager
 import android.provider.MediaStore
 import android.view.Gravity
+import android.view.View
 import android.widget.Button
 import android.widget.GridLayout
 import android.widget.ImageView
@@ -24,8 +25,10 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.documentfile.provider.DocumentFile
 import com.bumptech.glide.Glide
-import java.io.InputStream
-import java.io.OutputStream
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class MainActivity : AppCompatActivity() {
 
@@ -35,9 +38,11 @@ class MainActivity : AppCompatActivity() {
     private lateinit var tabAudio: TextView
     private lateinit var tabSaved: TextView
     private lateinit var tabSettings: TextView
+    private lateinit var btnTimeFilter: Button
     private var allFiles: List<DocumentFile> = listOf()
     private var currentTab = "images"
     private var sortCriteria = "time_desc"
+    private var selectedHourFilter = 0 // 0 means All, otherwise 1, 2, 3, 4, 5 hours
     private var savedUri: Uri? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -48,7 +53,6 @@ class MainActivity : AppCompatActivity() {
             setBackgroundColor(0xFFF0F2F5.toInt())
         }
 
-        // Header
         val header = TextView(this).apply {
             text = "Status Saver Pro"
             textSize = 20f
@@ -59,7 +63,6 @@ class MainActivity : AppCompatActivity() {
         }
         rootLayout.addView(header)
 
-        // Action Toolbar
         val toolbar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             setPadding(16, 16, 16, 8)
@@ -88,12 +91,18 @@ class MainActivity : AppCompatActivity() {
             setOnClickListener { showSortDialog() }
         }
 
-        toolbar.addView(btnGrant, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(4,0,4,0) })
-        toolbar.addView(btnRefresh, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(4,0,4,0) })
-        toolbar.addView(btnSort, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(4,0,4,0) })
+        btnTimeFilter = Button(this).apply {
+            text = "Time: All ▾"
+            textSize = 12f
+            setOnClickListener { showTimeFilterDialog() }
+        }
+
+        toolbar.addView(btnGrant, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(2,0,2,0) })
+        toolbar.addView(btnRefresh, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(2,0,2,0) })
+        toolbar.addView(btnSort, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(2,0,2,0) })
+        toolbar.addView(btnTimeFilter, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(2,0,2,0) })
         rootLayout.addView(toolbar)
 
-        // Tabs Bar (Images, Videos, Audio, Saved, Settings)
         val tabsLayout = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             setBackgroundColor(0xFF128C7E.toInt())
@@ -112,7 +121,6 @@ class MainActivity : AppCompatActivity() {
         tabsLayout.addView(tabSettings)
         rootLayout.addView(tabsLayout)
 
-        // Scrollable Grid View
         val scroll = ScrollView(this).apply {
             layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.MATCH_PARENT)
         }
@@ -186,23 +194,25 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun loadStatuses(uri: Uri) {
-        val docFile = DocumentFile.fromTreeUri(this, uri)
-        if (docFile == null || !docFile.exists()) return
-        allFiles = docFile.listFiles().filter { it.name != ".nomedia" }
-        
-        // Auto-save check if enabled in settings
-        val prefs = getSharedPreferences("StatusSaverPrefs", Context.MODE_PRIVATE)
-        if (prefs.getBoolean("auto_save_enabled", false)) {
-            autoSaveNewStatuses()
+        CoroutineScope(Dispatchers.IO).launch {
+            val docFile = DocumentFile.fromTreeUri(this@MainActivity, uri)
+            if (docFile != null && docFile.exists()) {
+                allFiles = docFile.listFiles().filter { it.name != ".nomedia" }
+                
+                val prefs = getSharedPreferences("StatusSaverPrefs", Context.MODE_PRIVATE)
+                if (prefs.getBoolean("auto_save_enabled", false)) {
+                    autoSaveNewStatuses()
+                }
+            }
+            withContext(Dispatchers.Main) {
+                renderGrid()
+            }
         }
-
-        renderGrid()
     }
 
     private fun autoSaveNewStatuses() {
         for (file in allFiles) {
             try {
-                // Background silent save logic for incoming statuses
                 val inputStream = contentResolver.openInputStream(file.uri) ?: continue
                 val name = file.name ?: "autosave_${System.currentTimeMillis()}"
                 val mimeType = if (name.endsWith(".mp4")) "video/mp4" else "image/jpeg"
@@ -223,9 +233,7 @@ class MainActivity : AppCompatActivity() {
                     }
                 }
                 inputStream.close()
-            } catch (e: Exception) {
-                // Ignore background collision exceptions
-            }
+            } catch (e: Exception) {}
         }
     }
 
@@ -255,6 +263,22 @@ class MainActivity : AppCompatActivity() {
             .show()
     }
 
+    private fun showTimeFilterDialog() {
+        val options = arrayOf("All Statuses", "Last 1 Hour", "Last 2 Hours", "Last 3 Hours", "Last 4 Hours", "Last 5 Hours", "Today Only")
+        AlertDialog.Builder(this)
+            .setTitle("Filter by Time")
+            .setItems(options) { _, which ->
+                selectedHourFilter = which // 0=All, 1=1hr, 2=2hr, 3=3hr, 4=4hr, 5=5hr, 6=Today
+                btnTimeFilter.text = when(which) {
+                    0 -> "Time: All ▾"
+                    6 -> "Time: Today ▾"
+                    else -> "Time: ${which}h ▾"
+                }
+                renderGrid()
+            }
+            .show()
+    }
+
     private fun renderGrid() {
         gridLayout.removeAllViews()
 
@@ -268,13 +292,23 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
+        val currentTime = System.currentTimeMillis()
         val filtered = allFiles.filter { file ->
             val name = file.name?.lowercase() ?: ""
-            when (currentTab) {
+            val matchesTab = when (currentTab) {
                 "images" -> name.endsWith(".jpg") || name.endsWith(".jpeg") || name.endsWith(".png")
                 "videos" -> name.endsWith(".mp4") || name.endsWith(".mkv") || name.endsWith(".avi")
                 "audio" -> name.endsWith(".mp3") || name.endsWith(".aac") || name.endsWith(".ogg") || name.endsWith(".wav")
                 else -> false
+            }
+
+            if (!matchesTab) return@filter false
+
+            val fileTime = file.lastModified()
+            when (selectedHourFilter) {
+                in 1..5 -> (currentTime - fileTime) <= (selectedHourFilter * 60 * 60 * 1000L)
+                6 -> (currentTime - fileTime) <= (24 * 60 * 60 * 1000L) // Today Only
+                else -> true // All
             }
         }.sortedWith(Comparator { f1, f2 ->
             when (sortCriteria) {
@@ -288,7 +322,7 @@ class MainActivity : AppCompatActivity() {
 
         if (filtered.isEmpty()) {
             val emptyTv = TextView(this).apply {
-                text = "\nNo $currentTab files found."
+                text = "\nNo files match this time filter."
                 textSize = 15f
                 gravity = Gravity.CENTER
             }
@@ -322,16 +356,6 @@ class MainActivity : AppCompatActivity() {
                 previewView.setOnClickListener { showImagePreview(file.uri) }
             } else if (currentTab == "videos") {
                 Glide.with(this).asBitmap().load(file.uri).into(previewView)
-                
-                // Extract video duration for preview overlay
-                val durationText = getVideoDuration(file.uri)
-                val durationBadge = TextView(this).apply {
-                    text = " ▶ $durationText "
-                    textSize = 10f
-                    setTextColor(0xFFFFFFFF.toInt())
-                    setBackgroundColor(0x99000000.toInt())
-                }
-                
                 previewView.setOnClickListener { showVideoPreview(file.uri) }
             } else {
                 previewView.setBackgroundColor(0xFF3F51B5.toInt())
@@ -400,7 +424,6 @@ class MainActivity : AppCompatActivity() {
             }
         }
         settingsLayout.addView(autoSaveSwitch)
-
         gridLayout.addView(settingsLayout)
     }
 
@@ -465,21 +488,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun getVideoDuration(uri: Uri): String {
-        try {
-            val retriever = MediaMetadataRetriever()
-            retriever.setDataSource(this, uri)
-            val timeString = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
-            retriever.release()
-            val millis = timeString?.toLong() ?: 0L
-            val seconds = (millis / 1000) % 60
-            val minutes = (millis / (1000 * 60)) % 60
-            return String.format("%d:%02d", minutes, seconds)
-        } catch (e: Exception) {
-            return "0:30"
-        }
-    }
-
     private fun showImagePreview(uri: Uri) {
         val imageView = ImageView(this).apply {
             adjustViewBounds = true
@@ -491,71 +499,3 @@ class MainActivity : AppCompatActivity() {
             .setPositiveButton("Close") { dialog, _ -> dialog.dismiss() }
             .show()
     }
-
-    private fun showVideoPreview(uri: Uri) {
-        val videoView = android.widget.VideoView(this).apply {
-            setVideoURI(uri)
-            setMediaController(android.widget.MediaController(this@MainActivity))
-            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 800)
-        }
-        val dialog = AlertDialog.Builder(this)
-            .setView(videoView)
-            .setPositiveButton("Close") { d, _ -> 
-                videoView.stopPlayback()
-                d.dismiss() 
-            }
-            .create()
-        dialog.show()
-        videoView.start()
-    }
-
-    private fun shareFile(uri: Uri) {
-        val intent = Intent(Intent.ACTION_SEND).apply {
-            type = "*/*"
-            putExtra(Intent.EXTRA_STREAM, uri)
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        }
-        startActivity(Intent.createChooser(intent, "Share Status via"))
-    }
-
-    private fun saveToGallery(file: DocumentFile) {
-        try {
-            val inputStream = contentResolver.openInputStream(file.uri) ?: return
-            val mimeType = when (currentTab) {
-                "images" -> "image/jpeg"
-                "videos" -> "video/mp4"
-                else -> "audio/mpeg"
-            }
-            val folderDir = when (currentTab) {
-                "images" -> Environment.DIRECTORY_PICTURES
-                "videos" -> Environment.DIRECTORY_MOVIES
-                else -> Environment.DIRECTORY_MUSIC
-            }
-
-            val values = ContentValues().apply {
-                put(MediaStore.MediaColumns.DISPLAY_NAME, file.name ?: "media_${System.currentTimeMillis()}")
-                put(MediaStore.MediaColumns.MIME_TYPE, mimeType)
-                put(MediaStore.MediaColumns.RELATIVE_PATH, folderDir)
-            }
-
-            val collection = when (currentTab) {
-                "images" -> MediaStore.Images.Media.EXTERNAL_CONTENT_URI
-                "videos" -> MediaStore.Video.Media.EXTERNAL_CONTENT_URI
-                else -> MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
-            }
-
-            val targetUri = contentResolver.insert(collection, values)
-            if (targetUri != null) {
-                val outputStream: OutputStream? = contentResolver.openOutputStream(targetUri)
-                if (outputStream != null) {
-                    inputStream.copyTo(outputStream)
-                    outputStream.close()
-                }
-                inputStream.close()
-                Toast.makeText(this, "Successfully Downloaded to Gallery!", Toast.LENGTH_SHORT).show()
-            }
-        } catch (e: Exception) {
-            Toast.makeText(this, "Download failed", Toast.LENGTH_SHORT).show()
-        }
-    }
-}
