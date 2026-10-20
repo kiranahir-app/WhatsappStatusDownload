@@ -5,14 +5,12 @@ import android.app.AlertDialog
 import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
-import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.os.Bundle
 import android.os.Environment
 import android.os.storage.StorageManager
 import android.provider.MediaStore
 import android.view.Gravity
-import android.view.View
 import android.widget.Button
 import android.widget.GridLayout
 import android.widget.ImageView
@@ -42,7 +40,7 @@ class MainActivity : AppCompatActivity() {
     private var allFiles: List<DocumentFile> = listOf()
     private var currentTab = "images"
     private var sortCriteria = "time_desc"
-    private var selectedHourFilter = 0 // 0 means All, otherwise 1, 2, 3, 4, 5 hours
+    private var selectedHourFilter = 0 
     private var savedUri: Uri? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -268,7 +266,7 @@ class MainActivity : AppCompatActivity() {
         AlertDialog.Builder(this)
             .setTitle("Filter by Time")
             .setItems(options) { _, which ->
-                selectedHourFilter = which // 0=All, 1=1hr, 2=2hr, 3=3hr, 4=4hr, 5=5hr, 6=Today
+                selectedHourFilter = which 
                 btnTimeFilter.text = when(which) {
                     0 -> "Time: All ▾"
                     6 -> "Time: Today ▾"
@@ -307,8 +305,8 @@ class MainActivity : AppCompatActivity() {
             val fileTime = file.lastModified()
             when (selectedHourFilter) {
                 in 1..5 -> (currentTime - fileTime) <= (selectedHourFilter * 60 * 60 * 1000L)
-                6 -> (currentTime - fileTime) <= (24 * 60 * 60 * 1000L) // Today Only
-                else -> true // All
+                6 -> (currentTime - fileTime) <= (24 * 60 * 60 * 1000L)
+                else -> true
             }
         }.sortedWith(Comparator { f1, f2 ->
             when (sortCriteria) {
@@ -499,3 +497,71 @@ class MainActivity : AppCompatActivity() {
             .setPositiveButton("Close") { dialog, _ -> dialog.dismiss() }
             .show()
     }
+
+    private fun showVideoPreview(uri: Uri) {
+        val videoView = android.widget.VideoView(this).apply {
+            setVideoURI(uri)
+            setMediaController(android.widget.MediaController(this@MainActivity))
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 800)
+        }
+        val dialog = AlertDialog.Builder(this)
+            .setView(videoView)
+            .setPositiveButton("Close") { d, _ -> 
+                videoView.stopPlayback()
+                d.dismiss() 
+            }
+            .create()
+        dialog.show()
+        videoView.start()
+    }
+
+    private fun shareFile(uri: Uri) {
+        val intent = Intent(Intent.ACTION_SEND).apply {
+            type = "*/*"
+            putExtra(Intent.EXTRA_STREAM, uri)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        startActivity(Intent.createChooser(intent, "Share Status via"))
+    }
+
+    private fun saveToGallery(file: DocumentFile) {
+        try {
+            val inputStream = contentResolver.openInputStream(file.uri) ?: return
+            val mimeType = when (currentTab) {
+                "images" -> "image/jpeg"
+                "videos" -> "video/mp4"
+                else -> "audio/mpeg"
+            }
+            val folderDir = when (currentTab) {
+                "images" -> Environment.DIRECTORY_PICTURES
+                "videos" -> Environment.DIRECTORY_MOVIES
+                else -> Environment.DIRECTORY_MUSIC
+            }
+
+            val values = ContentValues().apply {
+                put(MediaStore.MediaColumns.DISPLAY_NAME, file.name ?: "media_${System.currentTimeMillis()}")
+                put(MediaStore.MediaColumns.MIME_TYPE, mimeType)
+                put(MediaStore.MediaColumns.RELATIVE_PATH, folderDir)
+            }
+
+            val collection = when (currentTab) {
+                "images" -> MediaStore.Images.Media.EXTERNAL_CONTENT_URI
+                "videos" -> MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+                else -> MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
+            }
+
+            val targetUri = contentResolver.insert(collection, values)
+            if (targetUri != null) {
+                val outputStream: OutputStream? = contentResolver.openOutputStream(targetUri)
+                if (outputStream != null) {
+                    inputStream.copyTo(outputStream)
+                    outputStream.close()
+                }
+                inputStream.close()
+                Toast.makeText(this, "Successfully Downloaded to Gallery!", Toast.LENGTH_SHORT).show()
+            }
+        } catch (e: Exception) {
+            Toast.makeText(this, "Download failed", Toast.LENGTH_SHORT).show()
+        }
+    }
+}
