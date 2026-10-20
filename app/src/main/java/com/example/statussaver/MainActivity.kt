@@ -10,7 +10,10 @@ import android.os.Bundle
 import android.os.Environment
 import android.os.storage.StorageManager
 import android.provider.MediaStore
+import android.view.GestureDetector
 import android.view.Gravity
+import android.view.MotionEvent
+import android.view.View
 import android.widget.Button
 import android.widget.GridLayout
 import android.widget.ImageView
@@ -22,6 +25,7 @@ import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.documentfile.provider.DocumentFile
+import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import com.bumptech.glide.Glide
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -35,15 +39,16 @@ class MainActivity : AppCompatActivity() {
     private lateinit var gridLayout: GridLayout
     private lateinit var tabImages: TextView
     private lateinit var tabVideos: TextView
-    private lateinit var tabAudio: TextView
     private lateinit var tabSaved: TextView
-    private lateinit var tabSettings: TextView
     private lateinit var btnTimeFilter: Button
+    private lateinit var btnGrant: Button
+    private lateinit var swipeRefreshLayout: SwipeRefreshLayout
     private var allFiles: List<DocumentFile> = listOf()
     private var currentTab = "images"
     private var sortCriteria = "time_desc"
     private var selectedHourFilter = 0 
     private var savedUri: Uri? = null
+    private lateinit var gestureDetector: GestureDetector
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -63,26 +68,19 @@ class MainActivity : AppCompatActivity() {
         }
         rootLayout.addView(header)
 
+        // Toolbar: Folder (hidden if set), Sort, Time Filter, Settings Gear Icon
         val toolbar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             setPadding(16, 16, 16, 8)
             gravity = Gravity.CENTER_VERTICAL
         }
 
-        val btnGrant = Button(this).apply {
+        btnGrant = Button(this).apply {
             text = "Folder"
             textSize = 12f
             setBackgroundColor(0xFF25D366.toInt())
             setTextColor(0xFFFFFFFF.toInt())
             setOnClickListener { requestFolderPermission() }
-        }
-
-        val btnRefresh = Button(this).apply {
-            text = "🔄 Refresh"
-            textSize = 12f
-            setBackgroundColor(0xFF075E54.toInt())
-            setTextColor(0xFFFFFFFF.toInt())
-            setOnClickListener { refreshStatuses() }
         }
 
         val btnSort = Button(this).apply {
@@ -97,29 +95,37 @@ class MainActivity : AppCompatActivity() {
             setOnClickListener { showTimeFilterDialog() }
         }
 
+        val btnSettingsIcon = Button(this).apply {
+            text = "⚙️"
+            textSize = 14f
+            setOnClickListener { showSettingsDialog() }
+        }
+
         toolbar.addView(btnGrant, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(2,0,2,0) })
-        toolbar.addView(btnRefresh, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(2,0,2,0) })
         toolbar.addView(btnSort, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(2,0,2,0) })
         toolbar.addView(btnTimeFilter, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(2,0,2,0) })
+        toolbar.addView(btnSettingsIcon, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { setMargins(2,0,2,0) })
         rootLayout.addView(toolbar)
 
+        // Tabs Bar (Images, Videos, Saved)
         val tabsLayout = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             setBackgroundColor(0xFF128C7E.toInt())
         }
         
-        tabImages = createTab("IMG", "images")
-        tabVideos = createTab("VID", "videos")
-        tabAudio = createTab("AUD", "audio")
+        tabImages = createTab("IMAGES", "images")
+        tabVideos = createTab("VIDEOS", "videos")
         tabSaved = createTab("SAVED", "saved")
-        tabSettings = createTab("SETTING", "settings")
 
         tabsLayout.addView(tabImages)
         tabsLayout.addView(tabVideos)
-        tabsLayout.addView(tabAudio)
         tabsLayout.addView(tabSaved)
-        tabsLayout.addView(tabSettings)
         rootLayout.addView(tabsLayout)
+
+        // SwipeRefreshLayout wrapping ScrollView for pull-to-refresh
+        swipeRefreshLayout = SwipeRefreshLayout(this).apply {
+            setOnRefreshListener { refreshStatuses() }
+        }
 
         val scroll = ScrollView(this).apply {
             layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.MATCH_PARENT)
@@ -130,16 +136,44 @@ class MainActivity : AppCompatActivity() {
             setPadding(16, 16, 16, 16)
         }
         scroll.addView(gridLayout)
-        rootLayout.addView(scroll)
+        swipeRefreshLayout.addView(scroll)
+        rootLayout.addView(swipeRefreshLayout, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.MATCH_PARENT))
+
+        // Swipe gesture detector for tab switching
+        gestureDetector = GestureDetector(this, object : GestureDetector.SimpleOnGestureListener() {
+            override fun onFling(e1: MotionEvent?, e2: MotionEvent, velocityX: Float, velocityY: Float): Boolean {
+                if (e1 != null && e2 != null) {
+                    val diffX = e2.x - e1.x
+                    if (Math.abs(diffX) > 120 && Math.abs(velocityX) > 100) {
+                        if (diffX > 0) {
+                            // Swiped Right -> Previous Tab
+                            if (currentTab == "videos") switchTab("images")
+                            else if (currentTab == "saved") switchTab("videos")
+                        } else {
+                            // Swiped Left -> Next Tab
+                            if (currentTab == "images") switchTab("videos")
+                            else if (currentTab == "videos") switchTab("saved")
+                        }
+                        return true
+                    }
+                }
+                return false
+            }
+        })
 
         setContentView(rootLayout)
         checkPersistedPermission()
     }
 
+    override fun dispatchTouchEvent(ev: MotionEvent?): Boolean {
+        if (ev != null) gestureDetector.onTouchEvent(ev)
+        return super.dispatchTouchEvent(ev)
+    }
+
     private fun createTab(title: String, tabKey: String): TextView {
         return TextView(this).apply {
             text = title
-            textSize = 11f
+            textSize = 12f
             gravity = Gravity.CENTER
             setTextColor(if (tabKey == "images") 0xFFFFFFFF.toInt() else 0xAAFFFFFF.toInt())
             setPadding(0, 24, 0, 24)
@@ -153,6 +187,7 @@ class MainActivity : AppCompatActivity() {
         for (permission in persistedUriPermissions) {
             if (permission.isReadPermission) {
                 savedUri = permission.uri
+                btnGrant.visibility = View.GONE // Hide folder button if already set
                 loadStatuses(savedUri!!)
                 break
             }
@@ -175,6 +210,7 @@ class MainActivity : AppCompatActivity() {
             if (uri != null) {
                 contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 savedUri = uri
+                btnGrant.visibility = View.GONE // Hide folder button once set
                 loadStatuses(uri)
                 Toast.makeText(this, "Folder Saved & Loaded!", Toast.LENGTH_SHORT).show()
             }
@@ -184,11 +220,12 @@ class MainActivity : AppCompatActivity() {
     private fun refreshStatuses() {
         if (currentTab == "saved" || currentTab == "settings") {
             renderGrid()
+            swipeRefreshLayout.isRefreshing = false
             Toast.makeText(this, "Refreshed!", Toast.LENGTH_SHORT).show()
         } else if (savedUri != null) {
             loadStatuses(savedUri!!)
-            Toast.makeText(this, "Refreshed statuses!", Toast.LENGTH_SHORT).show()
         } else {
+            swipeRefreshLayout.isRefreshing = false
             Toast.makeText(this, "Please select WhatsApp folder first", Toast.LENGTH_SHORT).show()
         }
     }
@@ -206,6 +243,7 @@ class MainActivity : AppCompatActivity() {
             }
             withContext(Dispatchers.Main) {
                 renderGrid()
+                swipeRefreshLayout.isRefreshing = false
             }
         }
     }
@@ -241,9 +279,7 @@ class MainActivity : AppCompatActivity() {
         currentTab = tab
         tabImages.setTextColor(if (tab == "images") 0xFFFFFFFF.toInt() else 0xAAFFFFFF.toInt())
         tabVideos.setTextColor(if (tab == "videos") 0xFFFFFFFF.toInt() else 0xAAFFFFFF.toInt())
-        tabAudio.setTextColor(if (tab == "audio") 0xFFFFFFFF.toInt() else 0xAAFFFFFF.toInt())
         tabSaved.setTextColor(if (tab == "saved") 0xFFFFFFFF.toInt() else 0xAAFFFFFF.toInt())
-        tabSettings.setTextColor(if (tab == "settings") 0xFFFFFFFF.toInt() else 0xAAFFFFFF.toInt())
         renderGrid()
     }
 
@@ -279,13 +315,27 @@ class MainActivity : AppCompatActivity() {
             .show()
     }
 
+    private fun showSettingsDialog() {
+        val prefs = getSharedPreferences("StatusSaverPrefs", Context.MODE_PRIVATE)
+        val autoSaveSwitch = Switch(this).apply {
+            text = "Auto-save Statuses on Refresh"
+            isChecked = prefs.getBoolean("auto_save_enabled", false)
+            setPadding(32, 32, 32, 32)
+            setOnCheckedChangeListener { _, isChecked ->
+                prefs.edit().putBoolean("auto_save_enabled", isChecked).apply()
+                Toast.makeText(this@MainActivity, if (isChecked) "Auto-save Enabled" else "Auto-save Disabled", Toast.LENGTH_SHORT).show()
+            }
+        }
+
+        AlertDialog.Builder(this)
+            .setTitle("App Settings")
+            .setView(autoSaveSwitch)
+            .setPositiveButton("Done") { dialog, _ -> dialog.dismiss() }
+            .show()
+    }
+
     private fun renderGrid() {
         gridLayout.removeAllViews()
-
-        if (currentTab == "settings") {
-            renderSettingsView()
-            return
-        }
 
         if (currentTab == "saved") {
             renderSavedFilesGrid()
@@ -298,7 +348,6 @@ class MainActivity : AppCompatActivity() {
             val matchesTab = when (currentTab) {
                 "images" -> name.endsWith(".jpg") || name.endsWith(".jpeg") || name.endsWith(".png")
                 "videos" -> name.endsWith(".mp4") || name.endsWith(".mkv") || name.endsWith(".avi")
-                "audio" -> name.endsWith(".mp3") || name.endsWith(".aac") || name.endsWith(".ogg") || name.endsWith(".wav")
                 else -> false
             }
 
@@ -322,7 +371,7 @@ class MainActivity : AppCompatActivity() {
 
         if (filtered.isEmpty()) {
             val emptyTv = TextView(this).apply {
-                text = "\nNo files match this time filter."
+                text = "\nNo files match this filter."
                 textSize = 15f
                 gravity = Gravity.CENTER
             }
@@ -354,28 +403,21 @@ class MainActivity : AppCompatActivity() {
             if (currentTab == "images") {
                 Glide.with(this).load(file.uri).into(previewView)
                 previewView.setOnClickListener { showImagePreview(file.uri) }
-            } else if (currentTab == "videos") {
+            } else {
                 Glide.with(this).asBitmap().load(file.uri).into(previewView)
                 previewView.setOnClickListener { showVideoPreview(file.uri) }
-            } else {
-                previewView.setBackgroundColor(0xFF3F51B5.toInt())
-                previewView.setOnClickListener {
-                    val intent = Intent(Intent.ACTION_VIEW).apply {
-                        setDataAndType(file.uri, "audio/*")
-                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                    }
-                    startActivity(intent)
-                }
             }
 
+            // Compact icon buttons for space saving
             val btnLayout = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 setPadding(0, 4, 0, 0)
+                gravity = Gravity.CENTER
             }
 
             val saveBtn = Button(this).apply {
-                text = "Download"
-                textSize = 10f
+                text = "⬇"
+                textSize = 14f
                 setBackgroundColor(0xFF128C7E.toInt())
                 setTextColor(0xFFFFFFFF.toInt())
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(2,0,2,0) }
@@ -383,8 +425,8 @@ class MainActivity : AppCompatActivity() {
             }
 
             val shareBtn = Button(this).apply {
-                text = "Share"
-                textSize = 10f
+                text = "📤"
+                textSize = 14f
                 setBackgroundColor(0xFF25D366.toInt())
                 setTextColor(0xFFFFFFFF.toInt())
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(2,0,2,0) }
@@ -398,33 +440,6 @@ class MainActivity : AppCompatActivity() {
             card.addView(btnLayout)
             gridLayout.addView(card)
         }
-    }
-
-    private fun renderSettingsView() {
-        val settingsLayout = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(32, 32, 32, 32)
-            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
-        }
-
-        val title = TextView(this).apply {
-            text = "App Settings"
-            textSize = 18f
-            setPadding(0, 0, 0, 32)
-        }
-        settingsLayout.addView(title)
-
-        val prefs = getSharedPreferences("StatusSaverPrefs", Context.MODE_PRIVATE)
-        val autoSaveSwitch = Switch(this).apply {
-            text = "Auto-save Statuses on Refresh"
-            isChecked = prefs.getBoolean("auto_save_enabled", false)
-            setOnCheckedChangeListener { _, isChecked ->
-                prefs.edit().putBoolean("auto_save_enabled", isChecked).apply()
-                Toast.makeText(this@MainActivity, if (isChecked) "Auto-save Enabled" else "Auto-save Disabled", Toast.LENGTH_SHORT).show()
-            }
-        }
-        settingsLayout.addView(autoSaveSwitch)
-        gridLayout.addView(settingsLayout)
     }
 
     private fun renderSavedFilesGrid() {
@@ -529,30 +544,19 @@ class MainActivity : AppCompatActivity() {
     private fun saveToGallery(file: DocumentFile) {
         try {
             val inputStream = contentResolver.openInputStream(file.uri) ?: return
-            val mimeType = when (currentTab) {
-                "images" -> "image/jpeg"
-                "videos" -> "video/mp4"
-                else -> "audio/mpeg"
-            }
-            val folderDir = when (currentTab) {
-                "images" -> Environment.DIRECTORY_PICTURES
-                "videos" -> Environment.DIRECTORY_MOVIES
-                else -> Environment.DIRECTORY_MUSIC
-            }
+            val name = file.name ?: "media_${System.currentTimeMillis()}"
+            val mimeType = if (currentTab == "images") "image/jpeg" else "video/mp4"
+            val folderDir = if (currentTab == "images") Environment.DIRECTORY_PICTURES else Environment.DIRECTORY_MOVIES
 
             val values = ContentValues().apply {
-                put(MediaStore.MediaColumns.DISPLAY_NAME, file.name ?: "media_${System.currentTimeMillis()}")
+                put(MediaStore.MediaColumns.DISPLAY_NAME, name)
                 put(MediaStore.MediaColumns.MIME_TYPE, mimeType)
                 put(MediaStore.MediaColumns.RELATIVE_PATH, folderDir)
             }
 
-            val collection = when (currentTab) {
-                "images" -> MediaStore.Images.Media.EXTERNAL_CONTENT_URI
-                "videos" -> MediaStore.Video.Media.EXTERNAL_CONTENT_URI
-                else -> MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
-            }
-
+            val collection = if (currentTab == "images") MediaStore.Images.Media.EXTERNAL_CONTENT_URI else MediaStore.Video.Media.EXTERNAL_CONTENT_URI
             val targetUri = contentResolver.insert(collection, values)
+            
             if (targetUri != null) {
                 val outputStream: OutputStream? = contentResolver.openOutputStream(targetUri)
                 if (outputStream != null) {
