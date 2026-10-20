@@ -33,6 +33,7 @@ class MainActivity : AppCompatActivity() {
     private var allFiles: List<DocumentFile> = listOf()
     private var currentTab = "images"
     private var sortCriteria = "time_desc"
+    private var savedUri: Uri? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -53,33 +54,39 @@ class MainActivity : AppCompatActivity() {
         }
         rootLayout.addView(header)
 
-        // Grant Permission Button
-        val btnGrant = Button(this).apply {
-            text = "Select WhatsApp Folder"
-            setOnClickListener { requestFolderPermission() }
-            setBackgroundColor(0xFF25D366.toInt())
-            setTextColor(0xFFFFFFFF.toInt())
-        }
-        val grantParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
-            setMargins(24, 24, 24, 12)
-        }
-        rootLayout.addView(btnGrant, grantParams)
-
-        // Sorting Bar
-        val sortLayout = LinearLayout(this).apply {
+        // Action Toolbar (Select Folder, Refresh, Sort)
+        val toolbar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            setPadding(24, 0, 24, 12)
+            setPadding(16, 16, 16, 8)
             gravity = Gravity.CENTER_VERTICAL
         }
-        val sortLabel = TextView(this).apply { text = "Sort by: "; textSize = 13f }
-        val sortBtn = Button(this).apply {
-            text = "Newest First ▾"
+
+        val btnGrant = Button(this).apply {
+            text = "Folder"
+            textSize = 12f
+            setBackgroundColor(0xFF25D366.toInt())
+            setTextColor(0xFFFFFFFF.toInt())
+            setOnClickListener { requestFolderPermission() }
+        }
+
+        val btnRefresh = Button(this).apply {
+            text = "🔄 Refresh"
+            textSize = 12f
+            setBackgroundColor(0xFF075E54.toInt())
+            setTextColor(0xFFFFFFFF.toInt())
+            setOnClickListener { refreshStatuses() }
+        }
+
+        val btnSort = Button(this).apply {
+            text = "Sort ▾"
             textSize = 12f
             setOnClickListener { showSortDialog() }
         }
-        sortLayout.addView(sortLabel)
-        sortLayout.addView(sortBtn)
-        rootLayout.addView(sortLayout)
+
+        toolbar.addView(btnGrant, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(4,0,4,0) })
+        toolbar.addView(btnRefresh, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(4,0,4,0) })
+        toolbar.addView(btnSort, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(4,0,4,0) })
+        rootLayout.addView(toolbar)
 
         // Tabs Bar
         val tabsLayout = LinearLayout(this).apply {
@@ -109,6 +116,9 @@ class MainActivity : AppCompatActivity() {
         rootLayout.addView(scroll)
 
         setContentView(rootLayout)
+
+        // Check for previously retained folder permission on startup
+        checkPersistedPermission()
     }
 
     private fun createTab(title: String, tabKey: String): TextView {
@@ -120,6 +130,17 @@ class MainActivity : AppCompatActivity() {
             setPadding(0, 24, 0, 24)
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
             setOnClickListener { switchTab(tabKey) }
+        }
+    }
+
+    private fun checkPersistedPermission() {
+        val persistedUriPermissions = contentResolver.persistedUriPermissions
+        for (permission in persistedUriPermissions) {
+            if (permission.isReadPermission) {
+                savedUri = permission.uri
+                loadStatuses(savedUri!!)
+                break
+            }
         }
     }
 
@@ -138,8 +159,19 @@ class MainActivity : AppCompatActivity() {
             val uri = result.data?.data
             if (uri != null) {
                 contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                savedUri = uri
                 loadStatuses(uri)
+                Toast.makeText(this, "Folder Saved & Loaded!", Toast.LENGTH_SHORT).show()
             }
+        }
+    }
+
+    private fun refreshStatuses() {
+        if (savedUri != null) {
+            loadStatuses(savedUri!!)
+            Toast.makeText(this, "Refreshed statuses!", Toast.LENGTH_SHORT).show()
+        } else {
+            Toast.makeText(this, "Please select the WhatsApp folder first", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -201,7 +233,7 @@ class MainActivity : AppCompatActivity() {
 
         if (filtered.isEmpty()) {
             val emptyTv = TextView(this).apply {
-                text = "\nNo $currentTab files found."
+                text = "\nNo $currentTab files found. Try tapping Refresh."
                 textSize = 15f
                 gravity = Gravity.CENTER
             }
@@ -230,30 +262,13 @@ class MainActivity : AppCompatActivity() {
                 setBackgroundColor(0xFFE0E0E0.toInt())
             }
 
-            // Lazy loading implementation using Glide library
             if (currentTab == "images") {
-                Glide.with(this)
-                    .load(file.uri)
-                    .placeholder(android.R.drawable.ic_menu_gallery)
-                    .into(previewView)
-
-                // Tap thumbnail to view full-screen image
+                Glide.with(this).load(file.uri).into(previewView)
                 previewView.setOnClickListener { showImagePreview(file.uri) }
             } else if (currentTab == "videos") {
-                // Glide automatically extracts and caches video thumbnail frames efficiently!
-                Glide.with(this)
-                    .asBitmap()
-                    .load(file.uri)
-                    .placeholder(android.R.drawable.ic_media_play)
-                    .into(previewView)
-
-                previewView.setOnClickListener {
-                    val intent = Intent(Intent.ACTION_VIEW).apply {
-                        setDataAndType(file.uri, "video/*")
-                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                    }
-                    startActivity(intent)
-                }
+                // Glide extracts the video frame thumbnail and shows a play overlay hint
+                Glide.with(this).asBitmap().load(file.uri).into(previewView)
+                previewView.setOnClickListener { showVideoPreview(file.uri) }
             } else {
                 previewView.setBackgroundColor(0xFF3F51B5.toInt())
                 previewView.setOnClickListener {
@@ -284,13 +299,31 @@ class MainActivity : AppCompatActivity() {
             adjustViewBounds = true
             maxHeight = 1500
         }
-        // Lazy load full image into preview dialog
         Glide.with(this).load(uri).into(imageView)
 
         AlertDialog.Builder(this)
             .setView(imageView)
             .setPositiveButton("Close") { dialog, _ -> dialog.dismiss() }
             .show()
+    }
+
+    private fun showVideoPreview(uri: Uri) {
+        val videoView = android.widget.VideoView(this).apply {
+            setVideoURI(uri)
+            setMediaController(android.widget.MediaController(this@MainActivity))
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 800)
+        }
+
+        val dialog = AlertDialog.Builder(this)
+            .setView(videoView)
+            .setPositiveButton("Close") { d, _ -> 
+                videoView.stopPlayback()
+                d.dismiss() 
+            }
+            .create()
+        
+        dialog.show()
+        videoView.start()
     }
 
     private fun saveToGallery(file: DocumentFile) {
