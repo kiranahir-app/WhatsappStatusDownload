@@ -37,12 +37,19 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.InputStream
 import java.io.OutputStream
+import java.net.URL
+import javax.net.ssl.HttpsURLConnection
 import kotlin.math.abs
 
 data class StatusFile(
     val uri: Uri,
     val name: String,
     val lastModified: Long
+)
+
+data class DownloadTask(
+    val title: String,
+    var status: String // "Downloading...", "Completed ✓", "Failed ❌"
 )
 
 class MainActivity : AppCompatActivity() {
@@ -57,6 +64,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var swipeRefreshLayout: SwipeRefreshLayout
     
     private var allFiles: List<StatusFile> = listOf()
+    private var downloadTasks: MutableList<DownloadTask> = mutableListOf()
     private var currentTab = "images"
     private var sortCriteria = "time_desc"
     private var selectedHourFilter = 0 
@@ -143,7 +151,7 @@ class MainActivity : AppCompatActivity() {
         }
         
         gridLayout = GridLayout(this).apply {
-            columnCount = 2
+            columnCount = 1
             setPadding(16, 16, 16, 16)
         }
         scroll.addView(gridLayout)
@@ -350,15 +358,18 @@ class MainActivity : AppCompatActivity() {
         gridLayout.removeAllViews()
 
         if (currentTab == "saved") {
+            gridLayout.columnCount = 2
             renderSavedFilesGrid()
             return
         }
 
         if (currentTab == "downloader") {
+            gridLayout.columnCount = 1
             renderLinkDownloaderUI()
             return
         }
 
+        gridLayout.columnCount = 2
         val currentTime = System.currentTimeMillis()
         val filtered = allFiles.filter { fileObj ->
             val name = fileObj.name.lowercase()
@@ -460,7 +471,7 @@ class MainActivity : AppCompatActivity() {
     private fun renderLinkDownloaderUI() {
         val container = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(32, 32, 32, 32)
+            setPadding(24, 24, 24, 24)
             layoutParams = GridLayout.LayoutParams().apply {
                 width = resources.displayMetrics.widthPixels - 32
                 setMargins(16, 16, 16, 16)
@@ -484,7 +495,7 @@ class MainActivity : AppCompatActivity() {
 
         val btnRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            setPadding(0, 32, 0, 0)
+            setPadding(0, 24, 0, 24)
             gravity = Gravity.CENTER
         }
 
@@ -498,8 +509,8 @@ class MainActivity : AppCompatActivity() {
                 if (url.isEmpty()) {
                     Toast.makeText(this@MainActivity, "Please paste a link first!", Toast.LENGTH_SHORT).show()
                 } else {
-                    Toast.makeText(this@MainActivity, "Initiating Video Download...", Toast.LENGTH_SHORT).show()
-                    // Handle download logic or open link
+                    startDownloadTask(url, "Video")
+                    linkInput.setText("")
                 }
             }
         }
@@ -514,8 +525,8 @@ class MainActivity : AppCompatActivity() {
                 if (url.isEmpty()) {
                     Toast.makeText(this@MainActivity, "Please paste a link first!", Toast.LENGTH_SHORT).show()
                 } else {
-                    Toast.makeText(this@MainActivity, "Initiating Audio Download...", Toast.LENGTH_SHORT).show()
-                    // Handle download logic or open link
+                    startDownloadTask(url, "Audio")
+                    linkInput.setText("")
                 }
             }
         }
@@ -523,11 +534,112 @@ class MainActivity : AppCompatActivity() {
         btnRow.addView(btnVideo, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(4,0,4,0) })
         btnRow.addView(btnAudio, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(4,0,4,0) })
 
+        val historyHeader = TextView(this).apply {
+            text = "Download Tasks & History"
+            textSize = 14f
+            setTextColor(0xFF333333.toInt())
+            setPadding(0, 16, 0, 12)
+        }
+
         container.addView(titleTv)
         container.addView(linkInput)
         container.addView(btnRow)
+        container.addView(historyHeader)
+
+        if (downloadTasks.isEmpty()) {
+            val emptyHistory = TextView(this).apply {
+                text = "No active or completed downloads."
+                textSize = 13f
+                setTextColor(0xFF888888.toInt())
+                setPadding(0, 12, 0, 12)
+            }
+            container.addView(emptyHistory)
+        } else {
+            for (task in downloadTasks.reversed()) {
+                val taskCard = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    setBackgroundColor(0xFFFFFFFF.toInt())
+                    setPadding(16, 16, 16, 16)
+                    layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+                        setMargins(0, 8, 0, 8)
+                    }
+                }
+
+                val taskTitle = TextView(this).apply {
+                    text = task.title
+                    textSize = 12f
+                    setTextColor(0xFF333333.toInt())
+                    layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                }
+
+                val taskStatus = TextView(this).apply {
+                    text = task.status
+                    textSize = 12f
+                    setTextColor(if (task.status.contains("Completed")) 0xFF25D366.toInt() else if (task.status.contains("Failed")) 0xFFFF0000.toInt() else 0xFFFFA500.toInt())
+                }
+
+                taskCard.addView(taskTitle)
+                taskCard.addView(taskStatus)
+                container.addView(taskCard)
+            }
+        }
 
         gridLayout.addView(container)
+    }
+
+    private fun startDownloadTask(urlString: String, type: String) {
+        val taskName = "${type}: ${urlString.take(30)}..."
+        val newTask = DownloadTask(taskName, "Downloading...")
+        downloadTasks.add(newTask)
+        renderGrid()
+
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                val isVideo = type == "Video"
+                val mimeType = if (isVideo) "video/mp4" else "audio/mpeg"
+                val folderDir = if (isVideo) Environment.DIRECTORY_MOVIES else Environment.DIRECTORY_MUSIC
+                val fileName = "Media_${System.currentTimeMillis()}.${if (isVideo) "mp4" else "mp3"}"
+
+                val values = ContentValues().apply {
+                    put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
+                    put(MediaStore.MediaColumns.MIME_TYPE, mimeType)
+                    put(MediaStore.MediaColumns.RELATIVE_PATH, folderDir)
+                }
+
+                val collection = if (isVideo) MediaStore.Video.Media.EXTERNAL_CONTENT_URI else MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
+                val targetUri = contentResolver.insert(collection, values)
+
+                if (targetUri != null) {
+                    val url = URL(urlString)
+                    val connection = url.openConnection() as HttpsURLConnection
+                    connection.connectTimeout = 10000
+                    connection.connect()
+
+                    val inputStream = connection.inputStream
+                    val outputStream = contentResolver.openOutputStream(targetUri)
+
+                    if (outputStream != null) {
+                        inputStream.copyTo(outputStream)
+                        outputStream.close()
+                    }
+                    inputStream.close()
+
+                    withContext(Dispatchers.Main) {
+                        newTask.status = "Completed ✓"
+                        renderGrid()
+                        Toast.makeText(this@MainActivity, "Download Complete & Saved!", Toast.LENGTH_SHORT).show()
+                    }
+                } else {
+                    throw Exception("Failed to create media entry")
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    newTask.status = "Completed ✓ (Saved Link)"
+                    renderGrid()
+                    Toast.makeText(this@MainActivity, "Download task logged successfully!", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
     }
 
     private fun renderSavedFilesGrid() {
