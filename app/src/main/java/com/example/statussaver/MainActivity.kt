@@ -388,7 +388,7 @@ class MainActivity : AppCompatActivity() {
         }.sortedWith(Comparator { f1, f2 ->
             when (sortCriteria) {
                 "time_desc" -> f2.lastModified.compareTo(f1.lastModified)
-                "time_asc" -> f1.lastModified.compareTo(f1.lastModified)
+                "time_asc" -> f1.lastModified.compareTo(f2.lastModified)
                 "name_asc" -> f1.name.compareTo(f2.name)
                 "name_desc" -> f2.name.compareTo(f1.name)
                 else -> 0
@@ -433,7 +433,6 @@ class MainActivity : AppCompatActivity() {
                 previewView.setOnClickListener { openFullScreenGallery(filtered, i) }
             }
 
-            // Download icon on bottom-left corner
             val saveIcon = TextView(this).apply {
                 text = " ⬇ "
                 textSize = 18f
@@ -447,7 +446,6 @@ class MainActivity : AppCompatActivity() {
                 setOnClickListener { saveToGallery(fileObj) }
             }
 
-            // Share icon on bottom-right corner
             val shareIcon = TextView(this).apply {
                 text = " 📤 "
                 textSize = 18f
@@ -533,24 +531,18 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // Fully corrected full-screen viewer with proper layout weights so images expand nicely
+    // Fully corrected full-screen viewer with fixed FrameLayout sizing and absolute bottom action bar anchoring
     private fun openFullScreenGallery(items: List<StatusFile>, initialIndex: Int) {
         var currentIndex = initialIndex
         var isMuted = false
 
-        val rootContainer = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
+        val rootContainer = FrameLayout(this).apply {
             setBackgroundColor(0xFF000000.toInt())
             layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.MATCH_PARENT)
         }
 
-        // Media Frame taking up all available screen space with weight 1f
-        val mediaContainer = FrameLayout(this).apply {
-            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f)
-        }
-
         val imageView = ImageView(this).apply {
-            layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
+            layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT, Gravity.CENTER)
             scaleType = ImageView.ScaleType.FIT_CENTER
         }
 
@@ -559,17 +551,18 @@ class MainActivity : AppCompatActivity() {
             visibility = View.GONE
         }
 
-        mediaContainer.addView(imageView)
-        mediaContainer.addView(videoView)
-        rootContainer.addView(mediaContainer)
+        rootContainer.addView(imageView)
+        rootContainer.addView(videoView)
 
-        // Transparent Action Bar at the bottom
+        // Action bar pinned securely to the absolute bottom of the screen
         val overlayBar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
             setBackgroundColor(0x99000000.toInt())
             setPadding(16, 24, 16, 24)
-            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+            layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT).apply {
+                gravity = Gravity.BOTTOM
+            }
         }
 
         val btnPrev = Button(this).apply {
@@ -577,6 +570,7 @@ class MainActivity : AppCompatActivity() {
             textSize = 14f
             setBackgroundColor(0x66FFFFFF.toInt())
             setTextColor(0xFFFFFFFF.toInt())
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(4,0,4,0) }
         }
 
         val btnMute = Button(this).apply {
@@ -584,6 +578,7 @@ class MainActivity : AppCompatActivity() {
             textSize = 14f
             setBackgroundColor(0x66444444.toInt())
             setTextColor(0xFFFFFFFF.toInt())
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { setMargins(4,0,4,0) }
         }
 
         val btnDownload = Button(this).apply {
@@ -591,6 +586,7 @@ class MainActivity : AppCompatActivity() {
             textSize = 14f
             setBackgroundColor(0x66128C7E.toInt())
             setTextColor(0xFFFFFFFF.toInt())
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { setMargins(4,0,4,0) }
         }
 
         val btnShare = Button(this).apply {
@@ -598,6 +594,7 @@ class MainActivity : AppCompatActivity() {
             textSize = 14f
             setBackgroundColor(0x6625D366.toInt())
             setTextColor(0xFFFFFFFF.toInt())
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { setMargins(4,0,4,0) }
         }
 
         val btnNext = Button(this).apply {
@@ -605,6 +602,7 @@ class MainActivity : AppCompatActivity() {
             textSize = 14f
             setBackgroundColor(0x66FFFFFF.toInt())
             setTextColor(0xFFFFFFFF.toInt())
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(4,0,4,0) }
         }
 
         overlayBar.addView(btnPrev)
