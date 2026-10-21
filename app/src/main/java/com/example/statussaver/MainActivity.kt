@@ -1,7 +1,7 @@
 package com.example.statussaver
 
 import android.app.Activity
-import android.app.AlertDialog
+import android.app.Dialog
 import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
@@ -15,6 +15,7 @@ import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
+import android.view.Window
 import android.widget.Button
 import android.widget.FrameLayout
 import android.widget.GridLayout
@@ -210,7 +211,6 @@ class MainActivity : AppCompatActivity() {
                 break
             }
         }
-        // If no folder permission is set yet, automatically prompt user on first launch
         if (savedUri == null) {
             requestFolderPermission()
         }
@@ -540,30 +540,47 @@ class MainActivity : AppCompatActivity() {
         var currentIndex = initialIndex
         var isMuted = false
 
+        val dialog = Dialog(this, android.R.style.Theme_Black_NoTitleBar_Fullscreen)
+        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE)
+
+        // Root container matching absolute screen bounds
         val rootContainer = FrameLayout(this).apply {
             setBackgroundColor(0xFF000000.toInt())
             layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
         }
 
+        // Full screen ImageView positioned to fill entire height and width behind the bottom bar
         val imageView = ImageView(this).apply {
-            layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT, Gravity.CENTER)
+            layoutParams = FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT
+            ).apply {
+                setMargins(0, 0, 0, 140) // Leave space at bottom for buttons so they don't cover content
+            }
             scaleType = ImageView.ScaleType.FIT_CENTER
         }
 
         val videoView = android.widget.VideoView(this).apply {
-            layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT, Gravity.CENTER)
+            layoutParams = FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT
+            ).apply {
+                setMargins(0, 0, 0, 140)
+                gravity = Gravity.CENTER
+            }
             visibility = View.GONE
         }
 
-        rootContainer.addView(imageView)
-        rootContainer.addView(videoView)
-
+        // Bottom control action bar explicitly pinned to bottom using FrameLayout.Gravity
         val overlayBar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
             setBackgroundColor(0xCC000000.toInt())
-            setPadding(16, 24, 16, 24)
-            layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT).apply {
+            setPadding(16, 20, 16, 20)
+            layoutParams = FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
                 gravity = Gravity.BOTTOM
             }
         }
@@ -613,11 +630,12 @@ class MainActivity : AppCompatActivity() {
         overlayBar.addView(btnDownload)
         overlayBar.addView(btnShare)
         overlayBar.addView(btnNext)
+
+        rootContainer.addView(imageView)
+        rootContainer.addView(videoView)
         rootContainer.addView(overlayBar)
 
-        val dialog = AlertDialog.Builder(this, android.R.style.Theme_Black_NoTitleBar_Fullscreen)
-            .setView(rootContainer)
-            .create()
+        dialog.setContentView(rootContainer)
 
         fun updateMediaView() {
             val currentFile = items[currentIndex]
@@ -672,76 +690,4 @@ class MainActivity : AppCompatActivity() {
             override fun onFling(e1: MotionEvent?, e2: MotionEvent, velocityX: Float, velocityY: Float): Boolean {
                 if (e1 != null && e2 != null) {
                     val diffX = e2.x - e1.x
-                    if (Math.abs(diffX) > 100 && Math.abs(velocityX) > 100) {
-                        if (diffX > 0 && currentIndex > 0) {
-                            currentIndex--
-                            updateMediaView()
-                        } else if (diffX < 0 && currentIndex < items.size - 1) {
-                            currentIndex++
-                            updateMediaView()
-                        }
-                        return true
-                    }
-                }
-                return false
-            }
-        })
-
-        rootContainer.setOnTouchListener { _, event ->
-            fullScreenGesture.onTouchEvent(event)
-            true
-        }
-
-        btnDownload.setOnClickListener { saveToGallery(items[currentIndex]) }
-        btnShare.setOnClickListener { shareFile(items[currentIndex].uri) }
-
-        dialog.setOnDismissListener {
-            videoView.stopPlayback()
-        }
-
-        dialog.show()
-        // Force full window height and width parameters immediately on show
-        dialog.window?.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
-        updateMediaView()
-    }
-
-    private fun shareFile(uri: Uri) {
-        val intent = Intent(Intent.ACTION_SEND).apply {
-            type = "*/*"
-            putExtra(Intent.EXTRA_STREAM, uri)
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        }
-        startActivity(Intent.createChooser(intent, "Share Status via"))
-    }
-
-    private fun saveToGallery(fileObj: StatusFile) {
-        try {
-            val inputStream = contentResolver.openInputStream(fileObj.uri) ?: return
-            val name = fileObj.name
-            val mimeType = if (name.endsWith(".mp4")) "video/mp4" else "image/jpeg"
-            val folderDir = if (name.endsWith(".mp4")) Environment.DIRECTORY_MOVIES else Environment.DIRECTORY_PICTURES
-
-            val values = ContentValues().apply {
-                put(MediaStore.MediaColumns.DISPLAY_NAME, name)
-                put(MediaStore.MediaColumns.MIME_TYPE, mimeType)
-                put(MediaStore.MediaColumns.RELATIVE_PATH, folderDir)
-            }
-
-            val collection = if (name.endsWith(".mp4")) MediaStore.Video.Media.EXTERNAL_CONTENT_URI else MediaStore.Images.Media.EXTERNAL_CONTENT_URI
-            val targetUri = contentResolver.insert(collection, values)
-            
-            if (targetUri != null) {
-                val outputStream: OutputStream? = contentResolver.openOutputStream(targetUri)
-                if (outputStream != null) {
-                    inputStream.copyTo(outputStream)
-                    outputStream.close()
-                }
-                inputStream.close()
-                Toast.makeText(this, "Successfully Downloaded to Gallery!", Toast.LENGTH_SHORT).show()
-            }
-        } catch (e: Exception) {
-            Toast.makeText(this, "Download failed", Toast.LENGTH_SHORT).show()
-            Toast.makeText(this, "Download failed", Toast.LENGTH_SHORT).show()
-        }
-    }
-}
+                    if (Math
