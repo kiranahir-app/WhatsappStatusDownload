@@ -277,6 +277,7 @@ class MainActivity : AppCompatActivity() {
                     put(MediaStore.MediaColumns.DISPLAY_NAME, name)
                     put(MediaStore.MediaColumns.MIME_TYPE, mimeType)
                     put(MediaStore.MediaColumns.RELATIVE_PATH, folderDir)
+                    put(MediaStore.MediaColumns.IS_PENDING, 1)
                 }
                 val collection = if (name.endsWith(".mp4")) MediaStore.Video.Media.EXTERNAL_CONTENT_URI else MediaStore.Images.Media.EXTERNAL_CONTENT_URI
                 val targetUri = contentResolver.insert(collection, values)
@@ -286,6 +287,9 @@ class MainActivity : AppCompatActivity() {
                         inputStream.copyTo(out)
                         out.close()
                     }
+                    values.clear()
+                    values.put(MediaStore.MediaColumns.IS_PENDING, 0)
+                    contentResolver.update(targetUri, values, null, null)
                 }
                 inputStream.close()
             } catch (e: Exception) {}
@@ -855,6 +859,7 @@ class MainActivity : AppCompatActivity() {
                 put(MediaStore.MediaColumns.DISPLAY_NAME, audioName)
                 put(MediaStore.MediaColumns.MIME_TYPE, "audio/mp4")
                 put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
+                put(MediaStore.MediaColumns.IS_PENDING, 1)
             }
 
             val targetUri = contentResolver.insert(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, values)
@@ -865,6 +870,11 @@ class MainActivity : AppCompatActivity() {
                     outputStream.close()
                 }
                 inputStream.close()
+
+                values.clear()
+                values.put(MediaStore.MediaColumns.IS_PENDING, 0)
+                contentResolver.update(targetUri, values, null, null)
+
                 Toast.makeText(this, "Audio Extracted & Saved to Downloads!", Toast.LENGTH_SHORT).show()
             } else {
                 Toast.makeText(this, "Failed to create audio entry", Toast.LENGTH_SHORT).show()
@@ -894,6 +904,7 @@ class MainActivity : AppCompatActivity() {
                 put(MediaStore.MediaColumns.DISPLAY_NAME, name)
                 put(MediaStore.MediaColumns.MIME_TYPE, mimeType)
                 put(MediaStore.MediaColumns.RELATIVE_PATH, folderDir)
+                put(MediaStore.MediaColumns.IS_PENDING, 1)
             }
 
             val collection = if (name.endsWith(".mp4")) MediaStore.Video.Media.EXTERNAL_CONTENT_URI else MediaStore.Images.Media.EXTERNAL_CONTENT_URI
@@ -906,6 +917,11 @@ class MainActivity : AppCompatActivity() {
                     outputStream.close()
                 }
                 inputStream.close()
+
+                values.clear()
+                values.put(MediaStore.MediaColumns.IS_PENDING, 0)
+                contentResolver.update(targetUri, values, null, null)
+
                 Toast.makeText(this, "Successfully Downloaded to Gallery!", Toast.LENGTH_SHORT).show()
             }
         } catch (e: Exception) {
