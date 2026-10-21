@@ -545,49 +545,19 @@ class MainActivity : AppCompatActivity() {
         val dialog = Dialog(this, android.R.style.Theme_Black_NoTitleBar_Fullscreen)
         dialog.requestWindowFeature(Window.FEATURE_NO_TITLE)
 
-        // Use a vertical LinearLayout as the root container to stack media and controls perfectly
+        // Root vertical layout container
         val rootContainer = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(0xFF000000.toInt())
             layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
         }
 
-        // Media container taking up all available weight (pushes buttons to bottom naturally)
-        val mediaContainer = FrameLayout(this).apply {
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                0,
-                1f
-            )
-        }
-
-        val imageView = ImageView(this).apply {
-            layoutParams = FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT,
-                FrameLayout.LayoutParams.MATCH_PARENT,
-                Gravity.CENTER
-            )
-            scaleType = ImageView.ScaleType.FIT_CENTER
-        }
-
-        val videoView = android.widget.VideoView(this).apply {
-            layoutParams = FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT,
-                FrameLayout.LayoutParams.MATCH_PARENT,
-                Gravity.CENTER
-            )
-            visibility = View.GONE
-        }
-
-        mediaContainer.addView(imageView)
-        mediaContainer.addView(videoView)
-
-        // Bottom control action bar sitting right beneath the media container
+        // Top control action bar placed FIRST so it sits at the absolute top
         val overlayBar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
             setBackgroundColor(0xCC000000.toInt())
-            setPadding(16, 20, 16, 20)
+            setPadding(16, 24, 16, 24)
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
@@ -640,8 +610,39 @@ class MainActivity : AppCompatActivity() {
         overlayBar.addView(btnShare)
         overlayBar.addView(btnNext)
 
-        rootContainer.addView(mediaContainer)
+        // Media container taking up all remaining space below the top action bar
+        val mediaContainer = FrameLayout(this).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                0,
+                1f
+            )
+        }
+
+        val imageView = ImageView(this).apply {
+            layoutParams = FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                Gravity.CENTER
+            )
+            scaleType = ImageView.ScaleType.FIT_CENTER
+        }
+
+        val videoView = android.widget.VideoView(this).apply {
+            layoutParams = FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                Gravity.CENTER
+            )
+            visibility = View.GONE
+        }
+
+        mediaContainer.addView(imageView)
+        mediaContainer.addView(videoView)
+
+        // Add top bar first, then media container below it
         rootContainer.addView(overlayBar)
+        rootContainer.addView(mediaContainer)
 
         dialog.setContentView(rootContainer)
 
