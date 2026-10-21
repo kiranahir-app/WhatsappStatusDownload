@@ -531,14 +531,14 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // Fully corrected full-screen viewer with fixed FrameLayout sizing and absolute bottom action bar anchoring
+    // Fully corrected full-screen viewer forcing full screen height and fixed bottom action bar pinning
     private fun openFullScreenGallery(items: List<StatusFile>, initialIndex: Int) {
         var currentIndex = initialIndex
         var isMuted = false
 
         val rootContainer = FrameLayout(this).apply {
             setBackgroundColor(0xFF000000.toInt())
-            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.MATCH_PARENT)
+            layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
         }
 
         val imageView = ImageView(this).apply {
@@ -554,11 +554,11 @@ class MainActivity : AppCompatActivity() {
         rootContainer.addView(imageView)
         rootContainer.addView(videoView)
 
-        // Action bar pinned securely to the absolute bottom of the screen
+        // Action bar pinned securely to the bottom using FrameLayout gravity
         val overlayBar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
-            setBackgroundColor(0x99000000.toInt())
+            setBackgroundColor(0xCC000000.toInt())
             setPadding(16, 24, 16, 24)
             layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT).apply {
                 gravity = Gravity.BOTTOM
@@ -697,6 +697,8 @@ class MainActivity : AppCompatActivity() {
         }
 
         dialog.show()
+        // Force full window dimensions after dialog shows
+        dialog.window?.setLayout(android.view.ViewGroup.LayoutParams.MATCH_PARENT, android.view.ViewGroup.LayoutParams.MATCH_PARENT)
         updateMediaView()
     }
 
