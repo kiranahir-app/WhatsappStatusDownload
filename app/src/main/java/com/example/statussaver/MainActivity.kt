@@ -6,11 +6,13 @@ import android.app.Dialog
 import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
+import android.media.MediaPlayer
 import android.net.Uri
 import android.os.Bundle
 import android.os.Environment
 import android.os.storage.StorageManager
 import android.provider.MediaStore
+import android.view.GestureDetector
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
@@ -652,7 +654,8 @@ class MainActivity : AppCompatActivity() {
 
         val collections = listOf(
             MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
-            MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+            MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
+            MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
         )
 
         for (collection in collections) {
@@ -670,7 +673,7 @@ class MainActivity : AppCompatActivity() {
 
         if (savedFiles.isEmpty()) {
             val emptyTv = TextView(this).apply {
-                text = "\nNo downloaded statuses yet."
+                text = "\nNo downloaded files or extracted audio yet."
                 textSize = 15f
                 gravity = Gravity.CENTER
             }
@@ -683,6 +686,8 @@ class MainActivity : AppCompatActivity() {
 
         for (i in savedFiles.indices) {
             val fileObj = savedFiles[i]
+            val nameLower = fileObj.name.lowercase()
+            val isAudio = nameLower.endsWith(".m4a") || nameLower.endsWith(".mp3")
 
             val card = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
@@ -690,43 +695,119 @@ class MainActivity : AppCompatActivity() {
                 setPadding(8, 8, 8, 8)
                 layoutParams = GridLayout.LayoutParams().apply {
                     width = cardWidth
-                    height = (cardWidth * 1.3).toInt()
+                    height = if (isAudio) (cardWidth * 0.8).toInt() else (cardWidth * 1.3).toInt()
                     setMargins(8, 8, 8, 8)
                 }
             }
 
-            val previewView = ImageView(this).apply {
-                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f)
-                scaleType = ImageView.ScaleType.CENTER_CROP
-                setBackgroundColor(0xFFE0E0E0.toInt())
-            }
-
-            if (fileObj.name.lowercase().endsWith(".mp4")) {
-                Glide.with(this).asBitmap().load(fileObj.uri).into(previewView)
+            if (isAudio) {
+                val audioTv = TextView(this).apply {
+                    text = "🎵\n${fileObj.name}"
+                    textSize = 12f
+                    gravity = Gravity.CENTER
+                    setPadding(8, 24, 8, 24)
+                    layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f)
+                    setBackgroundColor(0xFFE8F5E9.toInt())
+                    setTextColor(0xFF2E7D32.toInt())
+                }
+                audioTv.setOnClickListener { playExtractedAudio(fileObj.uri, fileObj.name) }
+                card.addView(audioTv)
             } else {
-                Glide.with(this).load(fileObj.uri).into(previewView)
-            }
+                val previewView = ImageView(this).apply {
+                    layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f)
+                    scaleType = ImageView.ScaleType.CENTER_CROP
+                    setBackgroundColor(0xFFE0E0E0.toInt())
+                }
 
-            previewView.setOnClickListener { 
-                openFullScreenGallery(savedFiles, i)
+                if (nameLower.endsWith(".mp4")) {
+                    Glide.with(this).asBitmap().load(fileObj.uri).into(previewView)
+                } else {
+                    Glide.with(this).load(fileObj.uri).into(previewView)
+                }
+
+                previewView.setOnClickListener { 
+                    openFullScreenGallery(savedFiles, i)
+                }
+                card.addView(previewView)
             }
 
             val statusBtn = Button(this).apply {
-                text = "Saved ✓"
+                text = if (isAudio) "Play Audio 🎵" else "Saved ✓"
                 textSize = 11f
-                isEnabled = false
-                setBackgroundColor(0xFF888888.toInt())
+                isEnabled = !isAudio
+                setBackgroundColor(if (isAudio) 0xFF25D366.toInt() else 0xFF888888.toInt())
                 setTextColor(0xFFFFFFFF.toInt())
+                if (isAudio) {
+                    setOnClickListener { playExtractedAudio(fileObj.uri, fileObj.name) }
+                }
             }
 
-            card.addView(previewView)
             card.addView(statusBtn)
             gridLayout.addView(card)
         }
     }
 
+    private fun playExtractedAudio(uri: Uri, title: String) {
+        val dialog = Dialog(this)
+        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE)
+
+        val layout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(32, 32, 32, 32)
+            gravity = Gravity.CENTER
+            setBackgroundColor(0xFFFFFFFF.toInt())
+        }
+
+        val titleView = TextView(this).apply {
+            text = "Now Playing:\n$title"
+            textSize = 14f
+            gravity = Gravity.CENTER
+            setTextColor(0xFF128C7E.toInt())
+            setPadding(0, 0, 0, 24)
+        }
+
+        val btnPlayPause = Button(this).apply {
+            text = "⏸ Pause"
+            textSize = 14f
+            setBackgroundColor(0xFF25D366.toInt())
+            setTextColor(0xFFFFFFFF.toInt())
+        }
+
+        layout.addView(titleView)
+        layout.addView(btnPlayPause)
+        dialog.setContentView(layout)
+
+        var mediaPlayer: MediaPlayer? = null
+        try {
+            mediaPlayer = MediaPlayer.create(this, uri)
+            mediaPlayer?.start()
+            btnPlayPause.setOnClickListener {
+                if (mediaPlayer?.isPlaying == true) {
+                    mediaPlayer?.pause()
+                    btnPlayPause.text = "▶ Play"
+                } else {
+                    mediaPlayer?.start()
+                    btnPlayPause.text = "⏸ Pause"
+                }
+            }
+            mediaPlayer?.setOnCompletionListener {
+                btnPlayPause.text = "▶ Play"
+            }
+        } catch (e: Exception) {
+            Toast.makeText(this, "Could not play audio", Toast.LENGTH_SHORT).show()
+        }
+
+        dialog.setOnDismissListener {
+            mediaPlayer?.stop()
+            mediaPlayer?.release()
+        }
+
+        dialog.show()
+    }
+
     private fun openFullScreenGallery(items: List<StatusFile>, initialIndex: Int) {
         var currentIndex = initialIndex
+        var isPlaying = true
 
         val dialog = Dialog(this, android.R.style.Theme_Black_NoTitleBar_Fullscreen)
         dialog.requestWindowFeature(Window.FEATURE_NO_TITLE)
@@ -829,6 +910,9 @@ class MainActivity : AppCompatActivity() {
         dialog.setContentView(rootContainer)
 
         fun updateMediaView() {
+            if (currentIndex < 0) currentIndex = 0
+            if (currentIndex >= items.size) currentIndex = items.size - 1
+
             val currentFile = items[currentIndex]
             val nameLower = currentFile.name.lowercase()
             
@@ -838,6 +922,7 @@ class MainActivity : AppCompatActivity() {
                 btnExtractAudio.visibility = View.VISIBLE
                 videoView.setVideoURI(currentFile.uri)
                 videoView.setOnPreparedListener { mp ->
+                    isPlaying = true
                     mp.start()
                 }
                 videoView.setOnCompletionListener { mp ->
@@ -850,6 +935,52 @@ class MainActivity : AppCompatActivity() {
                 imageView.visibility = View.VISIBLE
                 Glide.with(this).load(currentFile.uri).into(imageView)
             }
+        }
+
+        // Tap video to play/pause
+        videoView.setOnClickListener {
+            if (videoView.isPlaying) {
+                videoView.pause()
+                isPlaying = false
+                Toast.makeText(this, "Paused", Toast.LENGTH_SHORT).show()
+            } else {
+                videoView.start()
+                isPlaying = true
+                Toast.makeText(this, "Playing", Toast.LENGTH_SHORT).show()
+            }
+        }
+
+        // Swipe Gesture Detection for Left/Right Navigation
+        val gestureDetector = GestureDetector(this, object : GestureDetector.SimpleOnGestureListener() {
+            private val SWIPE_THRESHOLD = 100
+            private val SWIPE_VELOCITY_THRESHOLD = 100
+
+            override fun onFling(e1: MotionEvent?, e2: MotionEvent, velocityX: Float, velocityY: Float): Boolean {
+                if (e1 == null) return false
+                val diffX = e2.x - e1.x
+                if (abs(diffX) > SWIPE_THRESHOLD && abs(velocityX) > SWIPE_VELOCITY_THRESHOLD) {
+                    if (diffX > 0) {
+                        // Swiped right -> Previous
+                        if (currentIndex > 0) {
+                            currentIndex--
+                            updateMediaView()
+                        }
+                    } else {
+                        // Swiped left -> Next
+                        if (currentIndex < items.size - 1) {
+                            currentIndex++
+                            updateMediaView()
+                        }
+                    }
+                    return true
+                }
+                return false
+            }
+        })
+
+        mediaContainer.setOnTouchListener { _, event ->
+            gestureDetector.onTouchEvent(event)
+            true
         }
 
         btnExtractAudio.setOnClickListener {
@@ -872,10 +1003,6 @@ class MainActivity : AppCompatActivity() {
             } else {
                 Toast.makeText(this, "Last status", Toast.LENGTH_SHORT).show()
             }
-        }
-
-        mediaContainer.setOnTouchListener { _, _ ->
-            true
         }
 
         btnDownload.setOnClickListener { saveToGallery(items[currentIndex]) }
@@ -912,7 +1039,6 @@ class MainActivity : AppCompatActivity() {
                 }
             }
 
-            // Fallback to MediaStore using DIRECTORY_MUSIC
             val values = ContentValues().apply {
                 put(MediaStore.MediaColumns.DISPLAY_NAME, audioName)
                 put(MediaStore.MediaColumns.MIME_TYPE, "audio/mp4")
