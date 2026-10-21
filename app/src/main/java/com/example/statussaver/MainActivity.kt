@@ -11,13 +11,13 @@ import android.os.Bundle
 import android.os.Environment
 import android.os.storage.StorageManager
 import android.provider.MediaStore
-import android.view.GestureDetector
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.Window
 import android.widget.Button
+import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.GridLayout
 import android.widget.ImageView
@@ -51,6 +51,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var tabImages: TextView
     private lateinit var tabVideos: TextView
     private lateinit var tabSaved: TextView
+    private lateinit var tabLinkDownloader: TextView
     private lateinit var btnTimeFilter: Button
     private lateinit var btnGrant: Button
     private lateinit var swipeRefreshLayout: SwipeRefreshLayout
@@ -60,7 +61,6 @@ class MainActivity : AppCompatActivity() {
     private var sortCriteria = "time_desc"
     private var selectedHourFilter = 0 
     private var savedUri: Uri? = null
-    private lateinit var gestureDetector: GestureDetector
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -126,10 +126,12 @@ class MainActivity : AppCompatActivity() {
         tabImages = createTab("IMAGES", "images")
         tabVideos = createTab("VIDEOS", "videos")
         tabSaved = createTab("SAVED", "saved")
+        tabLinkDownloader = createTab("DOWNLOADER", "downloader")
 
         tabsLayout.addView(tabImages)
         tabsLayout.addView(tabVideos)
         tabsLayout.addView(tabSaved)
+        tabsLayout.addView(tabLinkDownloader)
         rootLayout.addView(tabsLayout)
 
         swipeRefreshLayout = SwipeRefreshLayout(this).apply {
@@ -148,38 +150,14 @@ class MainActivity : AppCompatActivity() {
         swipeRefreshLayout.addView(scroll)
         rootLayout.addView(swipeRefreshLayout, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.MATCH_PARENT))
 
-        gestureDetector = GestureDetector(this, object : GestureDetector.SimpleOnGestureListener() {
-            override fun onFling(e1: MotionEvent?, e2: MotionEvent, velocityX: Float, velocityY: Float): Boolean {
-                if (e1 != null && e2 != null) {
-                    val diffX = e2.x - e1.x
-                    if (abs(diffX) > 120 && abs(velocityX) > 100) {
-                        if (diffX > 0) {
-                            if (currentTab == "videos") switchTab("images")
-                            else if (currentTab == "saved") switchTab("videos")
-                        } else {
-                            if (currentTab == "images") switchTab("videos")
-                            else if (currentTab == "videos") switchTab("saved")
-                        }
-                        return true
-                    }
-                }
-                return false
-            }
-        })
-
         setContentView(rootLayout)
         checkPersistedPermission()
-    }
-
-    override fun dispatchTouchEvent(ev: MotionEvent?): Boolean {
-        if (ev != null) gestureDetector.onTouchEvent(ev)
-        return super.dispatchTouchEvent(ev)
     }
 
     private fun createTab(title: String, tabKey: String): TextView {
         return TextView(this).apply {
             text = title
-            textSize = 12f
+            textSize = 11f
             gravity = Gravity.CENTER
             setTextColor(if (tabKey == "images") 0xFFFFFFFF.toInt() else 0xAAFFFFFF.toInt())
             setPadding(0, 24, 0, 24)
@@ -242,7 +220,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun refreshStatuses() {
-        if (currentTab == "saved") {
+        if (currentTab == "saved" || currentTab == "downloader") {
             renderGrid()
             swipeRefreshLayout.isRefreshing = false
             Toast.makeText(this, "Refreshed!", Toast.LENGTH_SHORT).show()
@@ -313,6 +291,7 @@ class MainActivity : AppCompatActivity() {
         tabImages.setTextColor(if (tab == "images") 0xFFFFFFFF.toInt() else 0xAAFFFFFF.toInt())
         tabVideos.setTextColor(if (tab == "videos") 0xFFFFFFFF.toInt() else 0xAAFFFFFF.toInt())
         tabSaved.setTextColor(if (tab == "saved") 0xFFFFFFFF.toInt() else 0xAAFFFFFF.toInt())
+        tabLinkDownloader.setTextColor(if (tab == "downloader") 0xFFFFFFFF.toInt() else 0xAAFFFFFF.toInt())
         renderGrid()
     }
 
@@ -372,6 +351,11 @@ class MainActivity : AppCompatActivity() {
 
         if (currentTab == "saved") {
             renderSavedFilesGrid()
+            return
+        }
+
+        if (currentTab == "downloader") {
+            renderLinkDownloaderUI()
             return
         }
 
@@ -473,12 +457,84 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun renderLinkDownloaderUI() {
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(32, 32, 32, 32)
+            layoutParams = GridLayout.LayoutParams().apply {
+                width = resources.displayMetrics.widthPixels - 32
+                setMargins(16, 16, 16, 16)
+            }
+        }
+
+        val titleTv = TextView(this).apply {
+            text = "YouTube & Instagram Downloader"
+            textSize = 16f
+            setTextColor(0xFF128C7E.toInt())
+            setPadding(0, 0, 0, 24)
+            gravity = Gravity.CENTER
+        }
+
+        val linkInput = EditText(this).apply {
+            hint = "Paste YouTube or Instagram link here..."
+            textSize = 14f
+            setPadding(24, 24, 24, 24)
+            setBackgroundColor(0xFFFFFFFF.toInt())
+        }
+
+        val btnRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(0, 32, 0, 0)
+            gravity = Gravity.CENTER
+        }
+
+        val btnVideo = Button(this).apply {
+            text = "⬇ Download Video"
+            textSize = 13f
+            setBackgroundColor(0xFF128C7E.toInt())
+            setTextColor(0xFFFFFFFF.toInt())
+            setOnClickListener {
+                val url = linkInput.text.toString().trim()
+                if (url.isEmpty()) {
+                    Toast.makeText(this@MainActivity, "Please paste a link first!", Toast.LENGTH_SHORT).show()
+                } else {
+                    Toast.makeText(this@MainActivity, "Initiating Video Download...", Toast.LENGTH_SHORT).show()
+                    // Handle download logic or open link
+                }
+            }
+        }
+
+        val btnAudio = Button(this).apply {
+            text = "🎵 Download Audio"
+            textSize = 13f
+            setBackgroundColor(0xFF25D366.toInt())
+            setTextColor(0xFFFFFFFF.toInt())
+            setOnClickListener {
+                val url = linkInput.text.toString().trim()
+                if (url.isEmpty()) {
+                    Toast.makeText(this@MainActivity, "Please paste a link first!", Toast.LENGTH_SHORT).show()
+                } else {
+                    Toast.makeText(this@MainActivity, "Initiating Audio Download...", Toast.LENGTH_SHORT).show()
+                    // Handle download logic or open link
+                }
+            }
+        }
+
+        btnRow.addView(btnVideo, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(4,0,4,0) })
+        btnRow.addView(btnAudio, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(4,0,4,0) })
+
+        container.addView(titleTv)
+        container.addView(linkInput)
+        container.addView(btnRow)
+
+        gridLayout.addView(container)
+    }
+
     private fun renderSavedFilesGrid() {
         val savedFiles = mutableListOf<StatusFile>()
         val projection = arrayOf(MediaStore.MediaColumns._ID, MediaStore.MediaColumns.DISPLAY_NAME)
         val sortOrder = "${MediaStore.MediaColumns.DATE_ADDED} DESC"
 
-        // Query both Images and Videos collections so all downloaded statuses appear here
         val collections = listOf(
             MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
             MediaStore.Video.Media.EXTERNAL_CONTENT_URI
@@ -707,27 +763,7 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        val fullScreenGesture = GestureDetector(this, object : GestureDetector.SimpleOnGestureListener() {
-            override fun onFling(e1: MotionEvent?, e2: MotionEvent, velocityX: Float, velocityY: Float): Boolean {
-                if (e1 != null && e2 != null) {
-                    val diffX = e2.x - e1.x
-                    if (abs(diffX) > 100 && abs(velocityX) > 100) {
-                        if (diffX > 0 && currentIndex > 0) {
-                            currentIndex--
-                            updateMediaView()
-                        } else if (diffX < 0 && currentIndex < items.size - 1) {
-                            currentIndex++
-                            updateMediaView()
-                        }
-                        return true
-                    }
-                }
-                return false
-            }
-        })
-
         mediaContainer.setOnTouchListener { _, event ->
-            fullScreenGesture.onTouchEvent(event)
             true
         }
 
