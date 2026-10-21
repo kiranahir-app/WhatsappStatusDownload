@@ -474,19 +474,30 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun renderSavedFilesGrid() {
-        val savedUris = mutableListOf<Uri>()
-        val projection = arrayOf(MediaStore.MediaColumns._ID)
+        val savedFiles = mutableListOf<StatusFile>()
+        val projection = arrayOf(MediaStore.MediaColumns._ID, MediaStore.MediaColumns.DISPLAY_NAME)
         val sortOrder = "${MediaStore.MediaColumns.DATE_ADDED} DESC"
 
-        contentResolver.query(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, projection, null, null, sortOrder)?.use { cursor ->
-            val idCol = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns._ID)
-            while (cursor.moveToNext()) {
-                val id = cursor.getLong(idCol)
-                savedUris.add(Uri.withAppendedPath(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, id.toString()))
+        // Query both Images and Videos collections so all downloaded statuses appear here
+        val collections = listOf(
+            MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+            MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+        )
+
+        for (collection in collections) {
+            contentResolver.query(collection, projection, null, null, sortOrder)?.use { cursor ->
+                val idCol = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns._ID)
+                val nameCol = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.DISPLAY_NAME)
+                while (cursor.moveToNext()) {
+                    val id = cursor.getLong(idCol)
+                    val name = cursor.getString(nameCol) ?: "media"
+                    val contentUri = Uri.withAppendedPath(collection, id.toString())
+                    savedFiles.add(StatusFile(contentUri, name, 0L))
+                }
             }
         }
 
-        if (savedUris.isEmpty()) {
+        if (savedFiles.isEmpty()) {
             val emptyTv = TextView(this).apply {
                 text = "\nNo downloaded statuses yet."
                 textSize = 15f
@@ -499,7 +510,9 @@ class MainActivity : AppCompatActivity() {
         val screenWidth = resources.displayMetrics.widthPixels
         val cardWidth = (screenWidth / 2) - 24
 
-        for (uri in savedUris) {
+        for (i in savedFiles.indices) {
+            val fileObj = savedFiles[i]
+
             val card = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
                 setBackgroundColor(0xFFFFFFFF.toInt())
@@ -517,11 +530,14 @@ class MainActivity : AppCompatActivity() {
                 setBackgroundColor(0xFFE0E0E0.toInt())
             }
 
-            val fakeFileObj = StatusFile(uri, "saved_image.jpg", 0L)
-            Glide.with(this).load(uri).into(previewView)
+            if (fileObj.name.lowercase().endsWith(".mp4")) {
+                Glide.with(this).asBitmap().load(fileObj.uri).into(previewView)
+            } else {
+                Glide.with(this).load(fileObj.uri).into(previewView)
+            }
+
             previewView.setOnClickListener { 
-                val fakeList = listOf(fakeFileObj)
-                openFullScreenGallery(fakeList, 0)
+                openFullScreenGallery(savedFiles, i)
             }
 
             val statusBtn = Button(this).apply {
@@ -545,14 +561,12 @@ class MainActivity : AppCompatActivity() {
         val dialog = Dialog(this, android.R.style.Theme_Black_NoTitleBar_Fullscreen)
         dialog.requestWindowFeature(Window.FEATURE_NO_TITLE)
 
-        // Root vertical layout container
         val rootContainer = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(0xFF000000.toInt())
             layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
         }
 
-        // Top control action bar placed FIRST so it sits at the absolute top
         val overlayBar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
@@ -610,7 +624,6 @@ class MainActivity : AppCompatActivity() {
         overlayBar.addView(btnShare)
         overlayBar.addView(btnNext)
 
-        // Media container taking up all remaining space below the top action bar
         val mediaContainer = FrameLayout(this).apply {
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
@@ -640,7 +653,6 @@ class MainActivity : AppCompatActivity() {
         mediaContainer.addView(imageView)
         mediaContainer.addView(videoView)
 
-        // Add top bar first, then media container below it
         rootContainer.addView(overlayBar)
         rootContainer.addView(mediaContainer)
 
