@@ -210,6 +210,10 @@ class MainActivity : AppCompatActivity() {
                 break
             }
         }
+        // If no folder permission is set yet, automatically prompt user on first launch
+        if (savedUri == null) {
+            requestFolderPermission()
+        }
     }
 
     private fun requestFolderPermission() {
@@ -696,7 +700,8 @@ class MainActivity : AppCompatActivity() {
         }
 
         dialog.show()
-        dialog.window?.setLayout(android.view.ViewGroup.LayoutParams.MATCH_PARENT, android.view.ViewGroup.LayoutParams.MATCH_PARENT)
+        // Force full window height and width parameters immediately on show
+        dialog.window?.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
         updateMediaView()
     }
 
@@ -735,6 +740,7 @@ class MainActivity : AppCompatActivity() {
                 Toast.makeText(this, "Successfully Downloaded to Gallery!", Toast.LENGTH_SHORT).show()
             }
         } catch (e: Exception) {
+            Toast.makeText(this, "Download failed", Toast.LENGTH_SHORT).show()
             Toast.makeText(this, "Download failed", Toast.LENGTH_SHORT).show()
         }
     }
