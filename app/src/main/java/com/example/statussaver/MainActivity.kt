@@ -14,6 +14,7 @@ import android.view.GestureDetector
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
+import android.view.ViewGroup
 import android.widget.Button
 import android.widget.FrameLayout
 import android.widget.GridLayout
@@ -531,7 +532,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // Fully corrected full-screen viewer forcing full screen height and fixed bottom action bar pinning
     private fun openFullScreenGallery(items: List<StatusFile>, initialIndex: Int) {
         var currentIndex = initialIndex
         var isMuted = false
@@ -554,7 +554,6 @@ class MainActivity : AppCompatActivity() {
         rootContainer.addView(imageView)
         rootContainer.addView(videoView)
 
-        // Action bar pinned securely to the bottom using FrameLayout gravity
         val overlayBar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
@@ -697,7 +696,6 @@ class MainActivity : AppCompatActivity() {
         }
 
         dialog.show()
-        // Force full window dimensions after dialog shows
         dialog.window?.setLayout(android.view.ViewGroup.LayoutParams.MATCH_PARENT, android.view.ViewGroup.LayoutParams.MATCH_PARENT)
         updateMediaView()
     }
