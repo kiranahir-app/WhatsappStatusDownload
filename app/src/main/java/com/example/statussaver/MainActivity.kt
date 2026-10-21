@@ -37,8 +37,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.InputStream
 import java.io.OutputStream
-import java.net.URL
-import javax.net.ssl.HttpsURLConnection
 import kotlin.math.abs
 
 data class StatusFile(
@@ -165,7 +163,7 @@ class MainActivity : AppCompatActivity() {
     private fun createTab(title: String, tabKey: String): TextView {
         return TextView(this).apply {
             text = title
-            textSize = 11f
+            textSize = 10f
             gravity = Gravity.CENTER
             setTextColor(if (tabKey == "images") 0xFFFFFFFF.toInt() else 0xAAFFFFFF.toInt())
             setPadding(0, 24, 0, 24)
@@ -487,7 +485,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         val linkInput = EditText(this).apply {
-            hint = "Paste YouTube/Insta (Video, Short, Audio) link..."
+            hint = "Paste YouTube/Insta link here..."
             textSize = 14f
             setPadding(24, 24, 24, 24)
             setBackgroundColor(0xFFFFFFFF.toInt())
@@ -509,7 +507,7 @@ class MainActivity : AppCompatActivity() {
                 if (url.isEmpty()) {
                     Toast.makeText(this@MainActivity, "Please paste a link first!", Toast.LENGTH_SHORT).show()
                 } else {
-                    processLinkTask(url, "Video")
+                    processMediaLink(url, "Video")
                     linkInput.setText("")
                 }
             }
@@ -525,7 +523,7 @@ class MainActivity : AppCompatActivity() {
                 if (url.isEmpty()) {
                     Toast.makeText(this@MainActivity, "Please paste a link first!", Toast.LENGTH_SHORT).show()
                 } else {
-                    processLinkTask(url, "Audio")
+                    processMediaLink(url, "Audio")
                     linkInput.setText("")
                 }
             }
@@ -575,7 +573,7 @@ class MainActivity : AppCompatActivity() {
                 val taskStatus = TextView(this).apply {
                     text = task.status
                     textSize = 12f
-                    setTextColor(if (task.status.contains("Success")) 0xFF25D366.toInt() else 0xFFFFA500.toInt())
+                    setTextColor(0xFF25D366.toInt())
                 }
 
                 taskCard.addView(taskTitle)
@@ -587,59 +585,20 @@ class MainActivity : AppCompatActivity() {
         gridLayout.addView(container)
     }
 
-    private fun processLinkTask(urlString: String, requestedType: String) {
-        val lowerUrl = urlString.lowercase()
-        val linkTypeDesc = when {
-            lowerUrl.contains("youtube.com/shorts") -> "YouTube Short"
-            lowerUrl.contains("youtu.be") || lowerUrl.contains("youtube.com") -> "YouTube Video/Audio"
-            lowerUrl.contains("instagram.com") -> "Instagram Media"
-            else -> "Web Link"
+    private fun processMediaLink(urlString: String, type: String) {
+        val lower = urlString.lowercase()
+        val detectedType = when {
+            lower.contains("shorts") -> "YouTube Short"
+            lower.contains("youtu.be") || lower.contains("youtube.com") -> "YouTube Video/Audio"
+            lower.contains("instagram.com") -> "Instagram Media"
+            else -> "Web Media Link"
         }
 
-        val taskName = "$linkTypeDesc ($requestedType)"
-        val newTask = DownloadTask(taskName, "Processing...")
+        val taskTitle = "$detectedType ($type)"
+        val newTask = DownloadTask(taskTitle, "Logged ✓")
         downloadTasks.add(newTask)
         renderGrid()
-
-        CoroutineScope(Dispatchers.IO).launch {
-            try {
-                // Determine destination based on requested type
-                val isVideo = requestedType == "Video"
-                val mimeType = if (isVideo) "video/mp4" else "audio/mpeg"
-                val folderDir = if (isVideo) Environment.DIRECTORY_MOVIES else Environment.DIRECTORY_DOWNLOADS
-                val fileName = "Download_${System.currentTimeMillis()}.${if (isVideo) "mp4" else "mp3"}"
-
-                val values = ContentValues().apply {
-                    put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
-                    put(MediaStore.MediaColumns.MIME_TYPE, mimeType)
-                    put(MediaStore.MediaColumns.RELATIVE_PATH, folderDir)
-                }
-
-                val collection = if (isVideo) MediaStore.Video.Media.EXTERNAL_CONTENT_URI else MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
-                val targetUri = contentResolver.insert(collection, values)
-
-                if (targetUri != null) {
-                    // Simulate stream writing or open browser intent fallback if direct stream blocks
-                    val outputStream = contentResolver.openOutputStream(targetUri)
-                    outputStream?.write("Link reference: $urlString".toByteArray())
-                    outputStream?.close()
-
-                    withContext(Dispatchers.Main) {
-                        newTask.status = "Success ✓ Saved"
-                        renderGrid()
-                        Toast.makeText(this@MainActivity, "$linkTypeDesc Saved Successfully!", Toast.LENGTH_SHORT).show()
-                    }
-                } else {
-                    throw Exception("Storage entry failed")
-                }
-            } catch (e: Exception) {
-                withContext(Dispatchers.Main) {
-                    newTask.status = "Saved Link Reference"
-                    renderGrid()
-                    Toast.makeText(this@MainActivity, "Link logged to downloads successfully!", Toast.LENGTH_SHORT).show()
-                }
-            }
-        }
+        Toast.makeText(this, "$taskTitle logged to tasks", Toast.LENGTH_SHORT).show()
     }
 
     private fun renderSavedFilesGrid() {
@@ -890,17 +849,17 @@ class MainActivity : AppCompatActivity() {
     private fun extractAudioFromVideo(fileObj: StatusFile) {
         try {
             val inputStream = contentResolver.openInputStream(fileObj.uri) ?: return
-            val audioName = "Audio_${System.currentTimeMillis()}.mp3"
+            val audioName = "Audio_${System.currentTimeMillis()}.m4a"
             
             val values = ContentValues().apply {
                 put(MediaStore.MediaColumns.DISPLAY_NAME, audioName)
-                put(MediaStore.MediaColumns.MIME_TYPE, "audio/mpeg")
+                put(MediaStore.MediaColumns.MIME_TYPE, "audio/mp4")
                 put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
             }
 
             val targetUri = contentResolver.insert(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, values)
             if (targetUri != null) {
-                val outputStream: OutputStream? = contentResolver.openOutputStream(targetUri)
+                val outputStream = contentResolver.openOutputStream(targetUri)
                 if (outputStream != null) {
                     inputStream.copyTo(outputStream)
                     outputStream.close()
@@ -908,10 +867,10 @@ class MainActivity : AppCompatActivity() {
                 inputStream.close()
                 Toast.makeText(this, "Audio Extracted & Saved to Downloads!", Toast.LENGTH_SHORT).show()
             } else {
-                Toast.makeText(this, "Failed to extract audio", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, "Failed to create audio entry", Toast.LENGTH_SHORT).show()
             }
         } catch (e: Exception) {
-            Toast.makeText(this, "Audio extraction failed", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Audio extraction failed: ${e.message}", Toast.LENGTH_SHORT).show()
         }
     }
 
