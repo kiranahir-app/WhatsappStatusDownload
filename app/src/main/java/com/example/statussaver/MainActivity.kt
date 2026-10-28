@@ -61,7 +61,6 @@ class MainActivity : AppCompatActivity() {
     private lateinit var tabLinkDownloader: TextView
     private lateinit var btnTimeFilter: Button
     private lateinit var btnGrant: Button
-    private lateinit var btnSetFolder: Button
     private lateinit var swipeRefreshLayout: SwipeRefreshLayout
     
     private var allFiles: List<StatusFile> = listOf()
@@ -70,7 +69,6 @@ class MainActivity : AppCompatActivity() {
     private var sortCriteria = "time_desc"
     private var selectedHourFilter = 0 
     private var savedUri: Uri? = null
-    private var customSaveUri: Uri? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -97,30 +95,22 @@ class MainActivity : AppCompatActivity() {
         }
 
         btnGrant = Button(this).apply {
-            text = "WhatsApp"
-            textSize = 11f
+            text = "Folder"
+            textSize = 12f
             setBackgroundColor(0xFF25D366.toInt())
             setTextColor(0xFFFFFFFF.toInt())
             setOnClickListener { requestFolderPermission() }
         }
 
-        btnSetFolder = Button(this).apply {
-            text = "Save Folder"
-            textSize = 11f
-            setBackgroundColor(0xFF128C7E.toInt())
-            setTextColor(0xFFFFFFFF.toInt())
-            setOnClickListener { requestCustomSaveDirectory() }
-        }
-
         val btnSort = Button(this).apply {
             text = "Sort ▾"
-            textSize = 11f
+            textSize = 12f
             setOnClickListener { showSortDialog() }
         }
 
         btnTimeFilter = Button(this).apply {
             text = "Time: All ▾"
-            textSize = 11f
+            textSize = 12f
             setOnClickListener { showTimeFilterDialog() }
         }
 
@@ -130,11 +120,10 @@ class MainActivity : AppCompatActivity() {
             setOnClickListener { showSettingsDialog() }
         }
 
-        toolbar.addView(btnGrant, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(1,0,1,0) })
-        toolbar.addView(btnSetFolder, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(1,0,1,0) })
-        toolbar.addView(btnSort, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(1,0,1,0) })
-        toolbar.addView(btnTimeFilter, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(1,0,1,0) })
-        toolbar.addView(btnSettingsIcon, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { setMargins(1,0,1,0) })
+        toolbar.addView(btnGrant, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(2,0,2,0) })
+        toolbar.addView(btnSort, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(2,0,2,0) })
+        toolbar.addView(btnTimeFilter, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(2,0,2,0) })
+        toolbar.addView(btnSettingsIcon, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { setMargins(2,0,2,0) })
         rootLayout.addView(toolbar)
 
         val tabsLayout = LinearLayout(this).apply {
@@ -170,13 +159,13 @@ class MainActivity : AppCompatActivity() {
         rootLayout.addView(swipeRefreshLayout, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.MATCH_PARENT))
 
         setContentView(rootLayout)
-        checkPersistedPermissions()
+        checkPersistedPermission()
     }
 
     private fun createTab(title: String, tabKey: String): TextView {
         return TextView(this).apply {
             text = title
-            textSize = 10f
+            textSize = 11f
             gravity = Gravity.CENTER
             setTextColor(if (tabKey == "images") 0xFFFFFFFF.toInt() else 0xAAFFFFFF.toInt())
             setPadding(0, 24, 0, 24)
@@ -200,21 +189,14 @@ class MainActivity : AppCompatActivity() {
         tabVideos.text = if (newVideosCount > 0) "VIDEOS ($newVideosCount)" else "VIDEOS"
     }
 
-    private fun checkPersistedPermissions() {
-        val prefs = getSharedPreferences("StatusSaverPrefs", Context.MODE_PRIVATE)
-        val savedCustomUriStr = prefs.getString("custom_save_uri", null)
-        if (savedCustomUriStr != null) {
-            customSaveUri = Uri.parse(savedCustomUriStr)
-        }
-
+    private fun checkPersistedPermission() {
         val persistedUriPermissions = contentResolver.persistedUriPermissions
         for (permission in persistedUriPermissions) {
             if (permission.isReadPermission) {
-                if (savedUri == null && permission.uri.toString().contains("WhatsApp")) {
-                    savedUri = permission.uri
-                    btnGrant.visibility = View.GONE
-                    loadStatuses(savedUri!!)
-                }
+                savedUri = permission.uri
+                btnGrant.visibility = View.GONE
+                loadStatuses(savedUri!!)
+                break
             }
         }
         if (savedUri == null) {
@@ -240,29 +222,7 @@ class MainActivity : AppCompatActivity() {
                 savedUri = uri
                 btnGrant.visibility = View.GONE
                 loadStatuses(uri)
-                Toast.makeText(this, "WhatsApp Folder Loaded!", Toast.LENGTH_SHORT).show()
-            }
-        }
-    }
-
-    private fun requestCustomSaveDirectory() {
-        val sm = getSystemService(STORAGE_SERVICE) as StorageManager
-        val intent = sm.primaryStorageVolume.createOpenDocumentTreeIntent()
-        customFolderPickerLauncher.launch(intent)
-    }
-
-    private val customFolderPickerLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-        if (result.resultCode == Activity.RESULT_OK) {
-            val uri = result.data?.data
-            if (uri != null) {
-                contentResolver.takePersistableUriPermission(
-                    uri,
-                    Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
-                )
-                customSaveUri = uri
-                val prefs = getSharedPreferences("StatusSaverPrefs", Context.MODE_PRIVATE)
-                prefs.edit().putString("custom_save_uri", uri.toString()).apply()
-                Toast.makeText(this, "Save Folder Selected Successfully!", Toast.LENGTH_LONG).show()
+                Toast.makeText(this, "Folder Saved & Loaded!", Toast.LENGTH_SHORT).show()
             }
         }
     }
@@ -319,7 +279,6 @@ class MainActivity : AppCompatActivity() {
                     put(MediaStore.MediaColumns.DISPLAY_NAME, name)
                     put(MediaStore.MediaColumns.MIME_TYPE, mimeType)
                     put(MediaStore.MediaColumns.RELATIVE_PATH, folderDir)
-                    put(MediaStore.MediaColumns.IS_PENDING, 1)
                 }
                 val collection = if (name.endsWith(".mp4")) MediaStore.Video.Media.EXTERNAL_CONTENT_URI else MediaStore.Images.Media.EXTERNAL_CONTENT_URI
                 val targetUri = contentResolver.insert(collection, values)
@@ -329,9 +288,6 @@ class MainActivity : AppCompatActivity() {
                         inputStream.copyTo(out)
                         out.close()
                     }
-                    values.clear()
-                    values.put(MediaStore.MediaColumns.IS_PENDING, 0)
-                    contentResolver.update(targetUri, values, null, null)
                 }
                 inputStream.close()
             } catch (e: Exception) {}
@@ -544,7 +500,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         val btnVideo = Button(this).apply {
-            text = "⬇ Download Video"
+            text = "⬇ Open Video Link"
             textSize = 13f
             setBackgroundColor(0xFF128C7E.toInt())
             setTextColor(0xFFFFFFFF.toInt())
@@ -553,14 +509,14 @@ class MainActivity : AppCompatActivity() {
                 if (url.isEmpty()) {
                     Toast.makeText(this@MainActivity, "Please paste a link first!", Toast.LENGTH_SHORT).show()
                 } else {
-                    processMediaLink(url, "Video")
+                    openInBrowser(url)
                     linkInput.setText("")
                 }
             }
         }
 
         val btnAudio = Button(this).apply {
-            text = "🎵 Download Audio"
+            text = "🎵 Open Audio Link"
             textSize = 13f
             setBackgroundColor(0xFF25D366.toInt())
             setTextColor(0xFFFFFFFF.toInt())
@@ -569,7 +525,13 @@ class MainActivity : AppCompatActivity() {
                 if (url.isEmpty()) {
                     Toast.makeText(this@MainActivity, "Please paste a link first!", Toast.LENGTH_SHORT).show()
                 } else {
-                    processMediaLink(url, "Audio")
+                    // Automatically append YTMP3 style search or open URL directly for audio conversion
+                    val audioTargetUrl = if (url.contains("youtube.com") || url.contains("youtu.be")) {
+                        "https://ytmp3.cc/en13/?url=${Uri.encode(url)}"
+                    } else {
+                        url
+                    }
+                    openInBrowser(audioTargetUrl)
                     linkInput.setText("")
                 }
             }
@@ -578,73 +540,23 @@ class MainActivity : AppCompatActivity() {
         btnRow.addView(btnVideo, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(4,0,4,0) })
         btnRow.addView(btnAudio, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(4,0,4,0) })
 
-        val historyHeader = TextView(this).apply {
-            text = "Download Tasks & History"
-            textSize = 14f
-            setTextColor(0xFF333333.toInt())
-            setPadding(0, 16, 0, 12)
-        }
-
         container.addView(titleTv)
         container.addView(linkInput)
         container.addView(btnRow)
-        container.addView(historyHeader)
-
-        if (downloadTasks.isEmpty()) {
-            val emptyHistory = TextView(this).apply {
-                text = "No active or completed downloads."
-                textSize = 13f
-                setTextColor(0xFF888888.toInt())
-                setPadding(0, 12, 0, 12)
-            }
-            container.addView(emptyHistory)
-        } else {
-            for (task in downloadTasks.reversed()) {
-                val taskCard = LinearLayout(this).apply {
-                    orientation = LinearLayout.HORIZONTAL
-                    setBackgroundColor(0xFFFFFFFF.toInt())
-                    setPadding(16, 16, 16, 16)
-                    layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
-                        setMargins(0, 8, 0, 8)
-                    }
-                }
-
-                val taskTitle = TextView(this).apply {
-                    text = task.title
-                    textSize = 12f
-                    setTextColor(0xFF333333.toInt())
-                    layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-                }
-
-                val taskStatus = TextView(this).apply {
-                    text = task.status
-                    textSize = 12f
-                    setTextColor(0xFF25D366.toInt())
-                }
-
-                taskCard.addView(taskTitle)
-                taskCard.addView(taskStatus)
-                container.addView(taskCard)
-            }
-        }
-
         gridLayout.addView(container)
     }
 
-    private fun processMediaLink(urlString: String, type: String) {
-        val lower = urlString.lowercase()
-        val detectedType = when {
-            lower.contains("shorts") -> "YouTube Short"
-            lower.contains("youtu.be") || lower.contains("youtube.com") -> "YouTube Video/Audio"
-            lower.contains("instagram.com") -> "Instagram Media"
-            else -> "Web Media Link"
+    private fun openInBrowser(urlString: String) {
+        try {
+            var url = urlString
+            if (!url.startsWith("http://") && !url.startsWith("https://")) {
+                url = "https://$url"
+            }
+            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+            startActivity(intent)
+        } catch (e: Exception) {
+            Toast.makeText(this, "Could not open link", Toast.LENGTH_SHORT).show()
         }
-
-        val taskTitle = "$detectedType ($type)"
-        val newTask = DownloadTask(taskTitle, "Logged ✓")
-        downloadTasks.add(newTask)
-        renderGrid()
-        Toast.makeText(this, "$taskTitle logged to tasks", Toast.LENGTH_SHORT).show()
     }
 
     private fun renderSavedFilesGrid() {
@@ -687,7 +599,7 @@ class MainActivity : AppCompatActivity() {
         for (i in savedFiles.indices) {
             val fileObj = savedFiles[i]
             val nameLower = fileObj.name.lowercase()
-            val isAudio = nameLower.endsWith(".m4a") || nameLower.endsWith(".mp3")
+            val isAudio = nameLower.endsWith(".mp3") || nameLower.endsWith(".m4a")
 
             val card = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
@@ -807,7 +719,6 @@ class MainActivity : AppCompatActivity() {
 
     private fun openFullScreenGallery(items: List<StatusFile>, initialIndex: Int) {
         var currentIndex = initialIndex
-        var isPlaying = true
 
         val dialog = Dialog(this, android.R.style.Theme_Black_NoTitleBar_Fullscreen)
         dialog.requestWindowFeature(Window.FEATURE_NO_TITLE)
@@ -922,7 +833,6 @@ class MainActivity : AppCompatActivity() {
                 btnExtractAudio.visibility = View.VISIBLE
                 videoView.setVideoURI(currentFile.uri)
                 videoView.setOnPreparedListener { mp ->
-                    isPlaying = true
                     mp.start()
                 }
                 videoView.setOnCompletionListener { mp ->
@@ -937,36 +847,20 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        // Tap video to play/pause
-        videoView.setOnClickListener {
-            if (videoView.isPlaying) {
-                videoView.pause()
-                isPlaying = false
-                Toast.makeText(this, "Paused", Toast.LENGTH_SHORT).show()
-            } else {
-                videoView.start()
-                isPlaying = true
-                Toast.makeText(this, "Playing", Toast.LENGTH_SHORT).show()
-            }
-        }
-
-        // Swipe Gesture Detection for Left/Right Navigation
         val gestureDetector = GestureDetector(this, object : GestureDetector.SimpleOnGestureListener() {
-            private val SWIPE_THRESHOLD = 100
-            private val SWIPE_VELOCITY_THRESHOLD = 100
+            private val SWIPE_THRESHOLD = 80
+            private val SWIPE_VELOCITY_THRESHOLD = 80
 
             override fun onFling(e1: MotionEvent?, e2: MotionEvent, velocityX: Float, velocityY: Float): Boolean {
                 if (e1 == null) return false
                 val diffX = e2.x - e1.x
                 if (abs(diffX) > SWIPE_THRESHOLD && abs(velocityX) > SWIPE_VELOCITY_THRESHOLD) {
                     if (diffX > 0) {
-                        // Swiped right -> Previous
                         if (currentIndex > 0) {
                             currentIndex--
                             updateMediaView()
                         }
                     } else {
-                        // Swiped left -> Next
                         if (currentIndex < items.size - 1) {
                             currentIndex++
                             updateMediaView()
@@ -976,12 +870,29 @@ class MainActivity : AppCompatActivity() {
                 }
                 return false
             }
+
+            override fun onSingleTapConfirmed(e: MotionEvent): Boolean {
+                if (videoView.visibility == View.VISIBLE) {
+                    if (videoView.isPlaying) {
+                        videoView.pause()
+                        Toast.makeText(this@MainActivity, "Paused", Toast.LENGTH_SHORT).show()
+                    } else {
+                        videoView.start()
+                        Toast.makeText(this@MainActivity, "Playing", Toast.LENGTH_SHORT).show()
+                    }
+                    return true
+                }
+                return false
+            }
         })
 
-        mediaContainer.setOnTouchListener { _, event ->
+        val touchListener = View.OnTouchListener { _, event ->
             gestureDetector.onTouchEvent(event)
-            true
+            false
         }
+
+        mediaContainer.setOnTouchListener(touchListener)
+        videoView.setOnTouchListener(touchListener)
 
         btnExtractAudio.setOnClickListener {
             extractAudioFromVideo(items[currentIndex])
@@ -1020,28 +931,11 @@ class MainActivity : AppCompatActivity() {
     private fun extractAudioFromVideo(fileObj: StatusFile) {
         try {
             val inputStream = contentResolver.openInputStream(fileObj.uri) ?: return
-            val audioName = "Audio_${System.currentTimeMillis()}.m4a"
-
-            if (customSaveUri != null) {
-                val docDir = DocumentFile.fromTreeUri(this, customSaveUri!!)
-                if (docDir != null && docDir.canWrite()) {
-                    val newFile = docDir.createFile("audio/mp4", audioName)
-                    if (newFile != null) {
-                        val out = contentResolver.openOutputStream(newFile.uri)
-                        if (out != null) {
-                            inputStream.copyTo(out)
-                            out.close()
-                        }
-                        inputStream.close()
-                        Toast.makeText(this, "Audio Extracted & Saved to Custom Folder!", Toast.LENGTH_SHORT).show()
-                        return
-                    }
-                }
-            }
-
+            val audioName = "Audio_${System.currentTimeMillis()}.mp3"
+            
             val values = ContentValues().apply {
                 put(MediaStore.MediaColumns.DISPLAY_NAME, audioName)
-                put(MediaStore.MediaColumns.MIME_TYPE, "audio/mp4")
+                put(MediaStore.MediaColumns.MIME_TYPE, "audio/mpeg")
                 put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_MUSIC)
                 put(MediaStore.MediaColumns.IS_PENDING, 1)
             }
@@ -1059,10 +953,9 @@ class MainActivity : AppCompatActivity() {
                 values.put(MediaStore.MediaColumns.IS_PENDING, 0)
                 contentResolver.update(targetUri, values, null, null)
 
-                Toast.makeText(this, "Audio Extracted & Saved to Music Folder!", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, "Audio Extracted & Saved as MP3!", Toast.LENGTH_SHORT).show()
             } else {
-                Toast.makeText(this, "Please tap 'Save Folder' button above to grant storage permission.", Toast.LENGTH_LONG).show()
-                requestCustomSaveDirectory()
+                Toast.makeText(this, "Failed to create audio entry", Toast.LENGTH_SHORT).show()
             }
         } catch (e: Exception) {
             Toast.makeText(this, "Audio extraction failed: ${e.message}", Toast.LENGTH_SHORT).show()
@@ -1084,23 +977,6 @@ class MainActivity : AppCompatActivity() {
             val name = fileObj.name
             val mimeType = if (name.endsWith(".mp4")) "video/mp4" else "image/jpeg"
             val folderDir = if (name.endsWith(".mp4")) Environment.DIRECTORY_MOVIES else Environment.DIRECTORY_PICTURES
-
-            if (customSaveUri != null) {
-                val docDir = DocumentFile.fromTreeUri(this, customSaveUri!!)
-                if (docDir != null && docDir.canWrite()) {
-                    val newFile = docDir.createFile(mimeType, name)
-                    if (newFile != null) {
-                        val out = contentResolver.openOutputStream(newFile.uri)
-                        if (out != null) {
-                            inputStream.copyTo(out)
-                            out.close()
-                        }
-                        inputStream.close()
-                        Toast.makeText(this, "Successfully Saved to Custom Folder!", Toast.LENGTH_SHORT).show()
-                        return
-                    }
-                }
-            }
 
             val values = ContentValues().apply {
                 put(MediaStore.MediaColumns.DISPLAY_NAME, name)
